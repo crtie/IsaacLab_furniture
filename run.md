@@ -67,3 +67,5 @@ $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
     )
   '''
   !NOTE: articulation_props is necessary
+
+  fdsgh
