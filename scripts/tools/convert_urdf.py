@@ -65,6 +65,12 @@ parser.add_argument(
     choices=["position", "velocity", "none"],
     help="The type of control to use for the joint drive.",
 )
+parser.add_argument(
+    "--root-link-name",
+    type=str,
+    default=None,
+    help="The name of the root link in the URDF. If not specified, the first link will be used.",
+)
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -116,6 +122,7 @@ def main():
             ),
             target_type=args_cli.joint_target_type,
         ),
+        root_link_name= args_cli.root_link_name if args_cli.root_link_name else None,
     )
 
     # Print info

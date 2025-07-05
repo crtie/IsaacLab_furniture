@@ -12,7 +12,7 @@ from isaaclab.sim import PhysxCfg, SimulationCfg
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
 from isaaclab.utils import configclass
 
-from .factory_tasks_cfg import ASSET_DIR, FactoryTask, GearMesh, NutThread, PegInsert
+from .np_tasks_cfg import ASSET_DIR, FactoryTask, GearMesh, NutThread, PegInsert, ChairAssembly
 
 OBS_DIM_CFG = {
     "fingertip_pos": 3,
@@ -152,7 +152,7 @@ class FactoryEnvCfg(DirectRLEnvCfg):
                 "panda_joint7": 0.0,
                 "panda_finger_joint2": 0.04,
             },
-            pos=(0.0, 0.0, 0.0),
+            pos=(-0.55, 0.0, 0.75),
             rot=(1.0, 0.0, 0.0, 0.0),
         ),
         actuators={
@@ -206,3 +206,9 @@ class FactoryTaskNutThreadCfg(FactoryEnvCfg):
     task_name = "nut_thread"
     task = NutThread()
     episode_length_s = 30.0
+
+@configclass
+class FrankaChairCfg(FactoryEnvCfg):
+    task_name = "chair_assembly"
+    task = ChairAssembly()
+    episode_length_s = 10.0

@@ -17,19 +17,20 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import axis_angle_from_quat
 
 from . import factory_control as fc
-from .factory_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FactoryEnvCfg
+from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChairCfg
 
 
-class FactoryEnv(DirectRLEnv):
-    cfg: FactoryEnvCfg
+class FrankaChairEnv(DirectRLEnv):
+    cfg: FrankaChairCfg
 
-    def __init__(self, cfg: FactoryEnvCfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: FrankaChairCfg, render_mode: str | None = None, **kwargs):
         # Update number of obs/states
         cfg.observation_space = sum([OBS_DIM_CFG[obs] for obs in cfg.obs_order])
         cfg.state_space = sum([STATE_DIM_CFG[state] for state in cfg.state_order])
         cfg.observation_space += cfg.action_space
         cfg.state_space += cfg.action_space
         self.cfg_task = cfg.task
+        print(f"Using task: {self.cfg_task.name}")
 
         super().__init__(cfg, render_mode, **kwargs)
 
@@ -98,8 +99,10 @@ class FactoryEnv(DirectRLEnv):
             held_base_z_offset = gear_base_offset[2]
         elif self.cfg_task.name == "nut_thread":
             held_base_z_offset = self.cfg_task.fixed_asset_cfg.base_height
+        elif self.cfg_task.name == "chair_assembly":
+            held_base_z_offset = 0.0
         else:
-            raise NotImplementedError("Task not implemented")
+            print(f"Task {self.cfg_task.name} not implemented.")
 
         self.held_base_pos_local = torch.tensor([0.0, 0.0, 0.0], device=self.device).repeat((self.num_envs, 1))
         self.held_base_pos_local[:, 0] = held_base_x_offset
@@ -142,6 +145,8 @@ class FactoryEnv(DirectRLEnv):
             shank_length = self.cfg_task.fixed_asset_cfg.height
             thread_pitch = self.cfg_task.fixed_asset_cfg.thread_pitch
             self.fixed_success_pos_local[:, 2] = head_height + shank_length - thread_pitch * 1.5
+        elif self.cfg_task.name == "chair_assembly":
+            self.fixed_success_pos_local[:, 2] = 0.0
         else:
             raise NotImplementedError("Task not implemented")
 
@@ -157,13 +162,15 @@ class FactoryEnv(DirectRLEnv):
 
     def _setup_scene(self):
         """Initialize simulation scene."""
-        spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg(), translation=(0.0, 0.0, -1.05))
+        spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg(), translation=(0.0, 0.0, -0.0))
 
         # spawn a usd file of a table into the scene
-        cfg = sim_utils.UsdFileCfg(usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd")
+        # cfg = sim_utils.UsdFileCfg(usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd")
+        cfg = sim_utils.UsdFileCfg(usd_path=f"/home/crtie/crtie/Manual2Skill2/LLM_TAMP/Assets/Scene/workdesk.usd")
+        cfg.scale = np.array([1.0, 0.7, 1.0])
+        cfg.mass_props = sim_utils.MassPropertiesCfg(mass=1e7),
         cfg.func(
-            "/World/envs/env_.*/Table", cfg, translation=(0.55, 0.0, 0.0), orientation=(0.70711, 0.0, 0.0, 0.70711)
-        )
+            "/World/envs/env_.*/Table", cfg, translation=(0., 0.0, 0.0), orientation=(1, 0.0, 0.0, 0.0))
 
         self._robot = Articulation(self.cfg.robot)
         self._fixed_asset = Articulation(self.cfg_task.fixed_asset)
@@ -254,6 +261,7 @@ class FactoryEnv(DirectRLEnv):
     def _get_observations(self):
         """Get actor/critic inputs using asymmetric critic."""
         noisy_fixed_pos = self.fixed_pos_obs_frame + self.init_fixed_pos_obs_noise
+        print("noisy_fixed_pos:", noisy_fixed_pos)
 
         prev_actions = self.actions.clone()
 
@@ -440,7 +448,7 @@ class FactoryEnv(DirectRLEnv):
         is_centered = torch.where(xy_dist < 0.0025, torch.ones_like(curr_successes), torch.zeros_like(curr_successes))
         # Height threshold to target
         fixed_cfg = self.cfg_task.fixed_asset_cfg
-        if self.cfg_task.name == "peg_insert" or self.cfg_task.name == "gear_mesh":
+        if self.cfg_task.name == "peg_insert" or self.cfg_task.name == "gear_mesh" or self.cfg_task.name == "chair_assembly":
             height_threshold = fixed_cfg.height * success_threshold
         elif self.cfg_task.name == "nut_thread":
             height_threshold = fixed_cfg.thread_pitch * success_threshold
@@ -618,6 +626,10 @@ class FactoryEnv(DirectRLEnv):
             held_asset_relative_pos[:, 2] += self.cfg_task.held_asset_cfg.height / 2.0 * 1.1
         elif self.cfg_task.name == "nut_thread":
             held_asset_relative_pos = self.held_base_pos_local
+        elif self.cfg_task.name == "chair_assembly":
+            held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
+            held_asset_relative_pos[:, 2] = self.cfg_task.held_asset_cfg.height
+            held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
         else:
             raise NotImplementedError("Task not implemented")
 
@@ -686,8 +698,8 @@ class FactoryEnv(DirectRLEnv):
         # (1.c.) Velocity
         fixed_state[:, 7:] = 0.0  # vel
         # (1.d.) Update values.
-        self._fixed_asset.write_root_pose_to_sim(fixed_state[:, 0:7], env_ids=env_ids)
-        self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:], env_ids=env_ids)
+        # self._fixed_asset.write_root_pose_to_sim(fixed_state[:, 0:7], env_ids=env_ids)
+        # self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:], env_ids=env_ids)
         self._fixed_asset.reset()
 
         # (1.e.) Noisy position observation.
@@ -886,3 +898,4 @@ class FactoryEnv(DirectRLEnv):
         self._set_gains(self.default_gains)
 
         physics_sim_view.set_gravity(carb.Float3(*self.cfg.sim.gravity))
+
