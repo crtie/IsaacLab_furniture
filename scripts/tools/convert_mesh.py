@@ -57,7 +57,7 @@ parser.add_argument(
     "--collision-approximation",
     type=str,
     default="convexDecomposition",
-    choices=["convexDecomposition", "convexHull", "boundingCube", "boundingSphere", "meshSimplification", "none"],
+    choices=["convexDecomposition", "convexHull", "boundingCube", "boundingSphere", "meshSimplification", "none", "sdf"],
     help=(
         'The method used for approximating collision mesh. Set to "none" '
         "to not add a collision mesh to the converted mesh."
@@ -117,11 +117,19 @@ def main():
     # Collision properties
     collision_props = schemas_cfg.CollisionPropertiesCfg(collision_enabled=args_cli.collision_approximation != "none")
 
+    # Articulation root properties
+    # articulation_props = schemas_cfg.ArticulationRootPropertiesCfg(
+    #     enabled_self_collisions=True,
+    #     fix_root_link=True, 
+    # )
+    articulation_props = None
+
     # Create Mesh converter config
     mesh_converter_cfg = MeshConverterCfg(
         mass_props=mass_props,
         rigid_props=rigid_props,
         collision_props=collision_props,
+        articulation_props=articulation_props,
         asset_path=mesh_path,
         force_usd_conversion=True,
         usd_dir=os.path.dirname(dest_path),

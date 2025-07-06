@@ -184,6 +184,11 @@ class MeshConverter(AssetConverterBase):
         # apply rigid body properties
         if cfg.rigid_props is not None:
             schemas.define_rigid_body_properties(prim_path=xform_prim.GetPath(), cfg=cfg.rigid_props, stage=stage)
+        # apply articulation root properties
+        if cfg.articulation_props is not None:
+            schemas.define_articulation_root_properties(
+                prim_path=xform_prim.GetPath(), cfg=cfg.articulation_props, stage=stage
+            )
 
         # Save changes to USD stage
         stage.Save()

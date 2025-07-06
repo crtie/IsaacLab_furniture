@@ -26,6 +26,12 @@ class MeshConverterCfg(AssetConverterBaseCfg):
         If None, then no rigid body properties will be added.
     """
 
+    articulation_props: schemas_cfg.ArticulationRootPropertiesCfg | None = None
+    """Articulation root properties to apply to the USD. Defaults to None.
+    Note:
+        If None, then no articulation root properties will be added.
+    """
+
     collision_props: schemas_cfg.CollisionPropertiesCfg | None = None
     """Collision properties to apply to the USD. Defaults to None.
 

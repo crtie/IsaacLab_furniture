@@ -128,7 +128,7 @@ def modify_articulation_root_properties(
     # we do the fixed joint processing later to not interfere with setting other properties
     if fix_root_link is not None:
         # check if a global fixed joint exists under the root prim
-        existing_fixed_joint_prim = find_global_fixed_joint_prim(prim_path)
+        existing_fixed_joint_prim = find_global_fixed_joint_prim(prim_path, stage=stage)
 
         # if we found a fixed joint, enable/disable it based on the input
         # otherwise, create a fixed joint between the world and the root link
@@ -149,34 +149,35 @@ def modify_articulation_root_properties(
                     " To create a fixed joint, we need to determine the first rigid body link in"
                     " the articulation tree. However, this is not implemented yet."
                 )
-
-            # create a fixed joint between the root link and the world frame
-            physx_utils.createJoint(stage=stage, joint_type="Fixed", from_prim=None, to_prim=articulation_prim)
-
-            # Having a fixed joint on a rigid body is not treated as "fixed base articulation".
-            # instead, it is treated as a part of the maximal coordinate tree.
-            # Moving the articulation root to the parent solves this issue. This is a limitation of the PhysX parser.
-            # get parent prim
             parent_prim = articulation_prim.GetParent()
-            # apply api to parent
-            UsdPhysics.ArticulationRootAPI.Apply(parent_prim)
-            PhysxSchema.PhysxArticulationAPI.Apply(parent_prim)
+            if not parent_prim == stage.GetPseudoRoot():
+                # create a fixed joint between the root link and the world frame
+                physx_utils.createJoint(stage=stage, joint_type="Fixed", from_prim=None, to_prim=articulation_prim)
 
-            # copy the attributes
-            # -- usd attributes
-            usd_articulation_api = UsdPhysics.ArticulationRootAPI(articulation_prim)
-            for attr_name in usd_articulation_api.GetSchemaAttributeNames():
-                attr = articulation_prim.GetAttribute(attr_name)
-                parent_prim.GetAttribute(attr_name).Set(attr.Get())
-            # -- physx attributes
-            physx_articulation_api = PhysxSchema.PhysxArticulationAPI(articulation_prim)
-            for attr_name in physx_articulation_api.GetSchemaAttributeNames():
-                attr = articulation_prim.GetAttribute(attr_name)
-                parent_prim.GetAttribute(attr_name).Set(attr.Get())
+                # Having a fixed joint on a rigid body is not treated as "fixed base articulation".
+                # instead, it is treated as a part of the maximal coordinate tree.
+                # Moving the articulation root to the parent solves this issue. This is a limitation of the PhysX parser.
+                # get parent prim
+                parent_prim = articulation_prim.GetParent()
+                # apply api to parent
+                UsdPhysics.ArticulationRootAPI.Apply(parent_prim)
+                PhysxSchema.PhysxArticulationAPI.Apply(parent_prim)
 
-            # remove api from root
-            articulation_prim.RemoveAPI(UsdPhysics.ArticulationRootAPI)
-            articulation_prim.RemoveAPI(PhysxSchema.PhysxArticulationAPI)
+                # copy the attributes
+                # -- usd attributes
+                usd_articulation_api = UsdPhysics.ArticulationRootAPI(articulation_prim)
+                for attr_name in usd_articulation_api.GetSchemaAttributeNames():
+                    attr = articulation_prim.GetAttribute(attr_name)
+                    parent_prim.GetAttribute(attr_name).Set(attr.Get())
+                # -- physx attributes
+                physx_articulation_api = PhysxSchema.PhysxArticulationAPI(articulation_prim)
+                for attr_name in physx_articulation_api.GetSchemaAttributeNames():
+                    attr = articulation_prim.GetAttribute(attr_name)
+                    parent_prim.GetAttribute(attr_name).Set(attr.Get())
+
+                # remove api from root
+                articulation_prim.RemoveAPI(UsdPhysics.ArticulationRootAPI)
+                articulation_prim.RemoveAPI(PhysxSchema.PhysxArticulationAPI)
 
     # success
     return True

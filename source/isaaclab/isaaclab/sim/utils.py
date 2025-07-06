@@ -751,6 +751,8 @@ def find_global_fixed_joint_prim(
         ValueError: If the prim path is not global (i.e: does not start with '/').
         ValueError: If the prim path does not exist on the stage.
     """
+    prim = stage.GetPrimAtPath(prim_path)
+    print(prim.IsValid(), prim_path)
     # check prim path is global
     if not prim_path.startswith("/"):
         raise ValueError(f"Prim path '{prim_path}' is not global. It must start with '/'.")

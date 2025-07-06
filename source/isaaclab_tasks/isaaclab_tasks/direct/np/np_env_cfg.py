@@ -12,7 +12,7 @@ from isaaclab.sim import PhysxCfg, SimulationCfg
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
 from isaaclab.utils import configclass
 
-from .np_tasks_cfg import ASSET_DIR, FactoryTask, GearMesh, NutThread, PegInsert, ChairAssembly
+from .np_tasks_cfg import ASSET_DIR, FactoryTask, ChairAssembly
 
 OBS_DIM_CFG = {
     "fingertip_pos": 3,
@@ -50,7 +50,8 @@ class ObsRandCfg:
 class CtrlCfg:
     ema_factor = 0.2
 
-    pos_action_bounds = [0.05, 0.05, 0.05]
+    # pos_action_bounds = [0.05, 0.05, 0.05]
+    pos_action_bounds = [1.0, 1.0, 0.2]
     rot_action_bounds = [1.0, 1.0, 1.0]
 
     pos_action_threshold = [0.02, 0.02, 0.02]
@@ -188,27 +189,7 @@ class FactoryEnvCfg(DirectRLEnvCfg):
 
 
 @configclass
-class FactoryTaskPegInsertCfg(FactoryEnvCfg):
-    task_name = "peg_insert"
-    task = PegInsert()
-    episode_length_s = 10.0
-
-
-@configclass
-class FactoryTaskGearMeshCfg(FactoryEnvCfg):
-    task_name = "gear_mesh"
-    task = GearMesh()
-    episode_length_s = 20.0
-
-
-@configclass
-class FactoryTaskNutThreadCfg(FactoryEnvCfg):
-    task_name = "nut_thread"
-    task = NutThread()
-    episode_length_s = 30.0
-
-@configclass
 class FrankaChairCfg(FactoryEnvCfg):
     task_name = "chair_assembly"
     task = ChairAssembly()
-    episode_length_s = 10.0
+    episode_length_s = 50.0

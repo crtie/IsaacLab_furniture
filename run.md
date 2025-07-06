@@ -6,9 +6,9 @@ $ python scripts/environments/zero_agent.py --task Isaac-Franka-Chair-Direct-v0 
 
 $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
   /home/crtie/crtie/Manual2Skill2/chair_real/frame.obj \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame.usd \
+  /home/crtie/crtie/Manual2Skill2/chair_real/frame_test.usd \
   --make-instanceable \
-  --collision-approximation convexDecomposition \
+  --collision-approximation sdf \
   --mass 1.0
 
 $ ./isaaclab.sh  -p scripts/tools/check_instanceable.py /home/crtie/crtie/Manual2Skill2/chair_real/frame_fromur.usd -n 4096  --physics
@@ -27,13 +27,14 @@ $ ./isaaclab.sh -p scripts/tools/convert_urdf.py \
 1. convert to usd
 $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
   /home/crtie/crtie/Manual2Skill2/chair_real/frame.obj \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame.usd \
+  /home/crtie/crtie/Manual2Skill2/chair_real/frame_sdf_ar.usd \
   --make-instanceable \
-  --collision-approximation convexDecomposition \
+  --collision-approximation sdf \
   --mass 1.0
 
-2. open an empty stage, import the usd, select the **root prim** , add-physics-articulation root
-3. import like this
+2. open an empty stage, import the usd, select the **root prim** , add-physics-articulation root; and select the mesh, change sdf parameter (increase sdf resolution)
+3. export the prim
+4. import like this
   '''
     fixed_asset: ArticulationCfg = ArticulationCfg(
         prim_path="/World/envs/env_.*/FixedAsset",
@@ -68,4 +69,3 @@ $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
   '''
   !NOTE: articulation_props is necessary
 
-  fdsgh

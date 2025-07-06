@@ -179,6 +179,7 @@ class FrankaChairEnv(DirectRLEnv):
             self._small_gear_asset = Articulation(self.cfg_task.small_gear_cfg)
             self._large_gear_asset = Articulation(self.cfg_task.large_gear_cfg)
 
+
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
             # we need to explicitly filter collisions for CPU simulation
@@ -737,7 +738,7 @@ class FrankaChairEnv(DirectRLEnv):
             above_fixed_pos[:, 2] += self.cfg_task.hand_init_pos[2]
 
             rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
-            above_fixed_pos_rand = 2 * (rand_sample - 0.5)  # [-1, 1]
+            above_fixed_pos_rand = 2 * (rand_sample - 0.5) + 0.5  # [-1, 1] # [-0.5, 1.5]
             hand_init_pos_rand = torch.tensor(self.cfg_task.hand_init_pos_noise, device=self.device)
             above_fixed_pos_rand = above_fixed_pos_rand @ torch.diag(hand_init_pos_rand)
             above_fixed_pos[bad_envs] += above_fixed_pos_rand
