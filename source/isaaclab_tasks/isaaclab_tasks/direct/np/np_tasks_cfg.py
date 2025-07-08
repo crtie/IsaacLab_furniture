@@ -172,16 +172,16 @@ class ChairAssembly(FactoryTask):
                 max_contact_impulse=1e32,
             ),
             scale = np.array([1.0, 1.0, 1.0]), 
-            # articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            #     enabled_self_collisions=True,
-            #     fix_root_link=True,  # add this so the fixed asset is set to have a fixed base
-            # ),
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                enabled_self_collisions=True,
+                fix_root_link=True,  # add this so the fixed asset is set to have a fixed base
+            ),
             mass_props=sim_utils.MassPropertiesCfg(mass=fixed_asset_cfg.mass),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=1e-4),
         ),
 
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.0, -0.25, 0.77), rot=(0.707, 0.707, 0.0, 0.0), joint_pos={}, joint_vel={}
+            pos=(0.0, -0.25, 0.78), rot=(0.707, 0.707, 0.0, 0.0), joint_pos={}, joint_vel={}
         ),
         actuators={},
     )

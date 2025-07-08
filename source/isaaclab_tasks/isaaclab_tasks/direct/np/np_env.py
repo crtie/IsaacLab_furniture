@@ -375,27 +375,32 @@ class FrankaChairEnv(DirectRLEnv):
             to_pose = held_mat
             from_path = fixed_prim.GetPath()
             to_path = held_prim.GetPath()
-        rel_pose = to_pose * from_pose.GetInverse()
+        rel_pose = to_pose * to_pose.GetInverse()
         # rel_pose = from_pose * to_pose.GetInverse()
-        rel_pose = rel_pose.GetInverse()
+        # rel_pose = rel_pose.GetInverse()
         rel_pose = rel_pose.RemoveScaleShear()
         pos1 = Gf.Vec3f(rel_pose.ExtractTranslation())
         rot1 = Gf.Quatf(rel_pose.ExtractRotationQuat())
+
+        # held_state = self._held_asset.data.default_root_state.clone()
+        # held_state[:, 7:] = 0.0
+        # self._held_asset.write_root_velocity_to_sim(held_state[:, 7:])
+        # self._held_asset.reset()
 
         joint = UsdPhysics.FixedJoint.Define(stage, joint_path)
         joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
         joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
 
 
-        # joint.CreateLocalPos0Attr().Set(pos1)
-        # joint.CreateLocalRot0Attr().Set(rot1)
-        # joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
-        # joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+        joint.CreateLocalPos0Attr().Set(pos1)
+        joint.CreateLocalRot0Attr().Set(rot1)
+        joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
+        joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
 
-        joint.CreateLocalPos1Attr().Set(pos1)
-        joint.CreateLocalRot1Attr().Set(rot1)
-        joint.CreateLocalPos0Attr().Set(Gf.Vec3f(0, 0, 0))
-        joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0))
+        # joint.CreateLocalPos1Attr().Set(pos1)
+        # joint.CreateLocalRot1Attr().Set(rot1)
+        # joint.CreateLocalPos0Attr().Set(Gf.Vec3f(0, 0, 0))
+        # joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0))
 
         # joint.CreateJointEnabledAttr().Set(True)
 
@@ -424,7 +429,7 @@ class FrankaChairEnv(DirectRLEnv):
 
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
-        self._check_attach_condition()
+        # self._check_attach_condition()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
