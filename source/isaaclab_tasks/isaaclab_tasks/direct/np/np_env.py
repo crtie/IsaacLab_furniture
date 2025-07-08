@@ -375,8 +375,9 @@ class FrankaChairEnv(DirectRLEnv):
             to_pose = held_mat
             from_path = fixed_prim.GetPath()
             to_path = held_prim.GetPath()
-        # rel_pose = to_pose * from_pose.GetInverse()
-        rel_pose = from_pose * fixed_mat.GetInverse()
+        rel_pose = to_pose * from_pose.GetInverse()
+        # rel_pose = from_pose * to_pose.GetInverse()
+        rel_pose = rel_pose.GetInverse()
         rel_pose = rel_pose.RemoveScaleShear()
         pos1 = Gf.Vec3f(rel_pose.ExtractTranslation())
         rot1 = Gf.Quatf(rel_pose.ExtractRotationQuat())
@@ -386,15 +387,15 @@ class FrankaChairEnv(DirectRLEnv):
         joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
 
 
-        joint.CreateLocalPos0Attr().Set(pos1)
-        joint.CreateLocalRot0Attr().Set(rot1)
-        joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
-        joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+        # joint.CreateLocalPos0Attr().Set(pos1)
+        # joint.CreateLocalRot0Attr().Set(rot1)
+        # joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
+        # joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
 
-        # joint.CreateLocalPos1Attr().Set(pos1)
-        # joint.CreateLocalRot1Attr().Set(rot1)
-        # joint.CreateLocalPos0Attr().Set(Gf.Vec3f(0, 0, 0))
-        # joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0))
+        joint.CreateLocalPos1Attr().Set(pos1)
+        joint.CreateLocalRot1Attr().Set(rot1)
+        joint.CreateLocalPos0Attr().Set(Gf.Vec3f(0, 0, 0))
+        joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0))
 
         # joint.CreateJointEnabledAttr().Set(True)
 
