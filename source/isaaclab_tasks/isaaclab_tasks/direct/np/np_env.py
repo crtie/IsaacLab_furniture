@@ -18,6 +18,7 @@ from isaaclab.utils.math import axis_angle_from_quat
 
 from . import factory_control as fc
 from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChairCfg
+from pdb import set_trace as bp
 
 
 class FrankaChairEnv(DirectRLEnv):
@@ -34,10 +35,15 @@ class FrankaChairEnv(DirectRLEnv):
 
         super().__init__(cfg, render_mode, **kwargs)
 
+        self.fixed_joint_created = False
+        self.fixed_joint_z_threshold = 0.82
+        self.fixed_joint_prim = None  # Will be set when the joint is created.
+
         self._set_body_inertias()
         self._init_tensors()
         self._set_default_dynamics_parameters()
         self._compute_intermediate_values(dt=self.physics_dt)
+
 
     def _set_body_inertias(self):
         """Note: this is to account for the asset_options.armature parameter in IGE."""
@@ -196,6 +202,7 @@ class FrankaChairEnv(DirectRLEnv):
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
 
+
     def _compute_intermediate_values(self, dt):
         """Get values computed from raw tensors. This includes adding noise."""
         # TODO: A lot of these can probably only be set once?
@@ -262,7 +269,6 @@ class FrankaChairEnv(DirectRLEnv):
     def _get_observations(self):
         """Get actor/critic inputs using asymmetric critic."""
         noisy_fixed_pos = self.fixed_pos_obs_frame + self.init_fixed_pos_obs_noise
-        print("noisy_fixed_pos:", noisy_fixed_pos)
 
         prev_actions = self.actions.clone()
 
@@ -302,8 +308,122 @@ class FrankaChairEnv(DirectRLEnv):
         """Reset buffers."""
         self.ep_succeeded[env_ids] = 0
 
+
+    def _get_real_mat(self):
+        from pxr import Usd, UsdPhysics, PhysxSchema, Sdf, Gf
+        from omni.physx.scripts import utils
+        import omni.usd
+        stage = omni.usd.get_context().get_stage()
+        held_prim = stage.GetPrimAtPath("/World/envs/env_0/HeldAsset")
+        fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
+
+
+        held_pos = self.held_pos[0].cpu().numpy()
+        held_quat = self.held_quat[0].cpu().numpy()
+        fixed_pos = self.fixed_pos[0].cpu().numpy()
+        fixed_quat = self.fixed_quat[0].cpu().numpy()
+
+        held_mat = Gf.Matrix4d()
+        held_mat.SetRotate(Gf.Rotation(Gf.Quatd(float(held_quat[0]), float(held_quat[1]), float(held_quat[2]), float(held_quat[3]))))
+        held_mat.SetTranslateOnly(Gf.Vec3d(*[float(x) for x in held_pos]))
+
+        fixed_mat = Gf.Matrix4d()
+        fixed_mat.SetRotate(Gf.Rotation(Gf.Quatd(float(fixed_quat[0]), float(fixed_quat[1]), float(fixed_quat[2]), float(fixed_quat[3]))))
+        fixed_mat.SetTranslateOnly(Gf.Vec3d(*[float(x) for x in fixed_pos]))
+
+
+        # print("held_mat", held_mat)
+        # print("fixed_mat", fixed_mat)
+
+        fixed_mat_inv = Gf.Matrix4d(fixed_mat).GetInverse()
+        held_mat_inv = Gf.Matrix4d(held_mat).GetInverse()
+        relative_mat = Gf.Matrix4d(held_mat) * fixed_mat_inv
+        # relative_mat = Gf.Matrix4d(fixed_mat) * held_mat_inv
+        print("relative_mat", relative_mat)
+
+    def _create_fixed_joint(self, from_held_asset=False):
+        """Create a fixed joint between the held asset and the fixed asset."""
+        from pxr import Usd, UsdPhysics, PhysxSchema, Sdf, Gf
+        from omni.physx.scripts import utils
+        import omni.usd
+        stage = omni.usd.get_context().get_stage()
+        held_prim = stage.GetPrimAtPath("/World/envs/env_0/HeldAsset")
+        fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
+        joint_path = "/World/envs/env_0/FixedJoint"
+
+        # 获取 held/fixed asset 的物理 pose（世界坐标）
+        held_pos = self.held_pos[0].cpu().numpy()
+        held_quat = self.held_quat[0].cpu().numpy()
+        fixed_pos = self.fixed_pos[0].cpu().numpy()
+        fixed_quat = self.fixed_quat[0].cpu().numpy()
+
+        held_mat = Gf.Matrix4d()
+        held_mat.SetRotate(Gf.Rotation(Gf.Quatd(float(held_quat[0]), float(held_quat[1]), float(held_quat[2]), float(held_quat[3]))))
+        held_mat.SetTranslateOnly(Gf.Vec3d(*[float(x) for x in held_pos]))
+
+        fixed_mat = Gf.Matrix4d()
+        fixed_mat.SetRotate(Gf.Rotation(Gf.Quatd(float(fixed_quat[0]), float(fixed_quat[1]), float(fixed_quat[2]), float(fixed_quat[3]))))
+        fixed_mat.SetTranslateOnly(Gf.Vec3d(*[float(x) for x in fixed_pos]))
+
+        if from_held_asset:
+            from_pose = held_mat
+            to_pose = fixed_mat
+            from_path = held_prim.GetPath()
+            to_path = fixed_prim.GetPath()
+        else:
+            from_pose = fixed_mat
+            to_pose = held_mat
+            from_path = fixed_prim.GetPath()
+            to_path = held_prim.GetPath()
+        # rel_pose = to_pose * from_pose.GetInverse()
+        rel_pose = from_pose * fixed_mat.GetInverse()
+        rel_pose = rel_pose.RemoveScaleShear()
+        pos1 = Gf.Vec3f(rel_pose.ExtractTranslation())
+        rot1 = Gf.Quatf(rel_pose.ExtractRotationQuat())
+
+        joint = UsdPhysics.FixedJoint.Define(stage, joint_path)
+        joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
+        joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
+
+
+        joint.CreateLocalPos0Attr().Set(pos1)
+        joint.CreateLocalRot0Attr().Set(rot1)
+        joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
+        joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+
+        # joint.CreateLocalPos1Attr().Set(pos1)
+        # joint.CreateLocalRot1Attr().Set(rot1)
+        # joint.CreateLocalPos0Attr().Set(Gf.Vec3f(0, 0, 0))
+        # joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0))
+
+        # joint.CreateJointEnabledAttr().Set(True)
+
+        self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
+        self.fixed_joint_created = True
+
+
+
+
+    def _check_attach_condition(self):
+        held_position = self.held_pos
+        self._get_real_mat()
+        if not self.fixed_joint_created and held_position[:, 2] < self.fixed_joint_z_threshold:
+            self._create_fixed_joint(False)
+            #! set true , held asset 会乱飞
+            #! set false, held asset 会固定到一个错误的位置
+            print("Creating fixed joint.")
+            
+            # bp()
+        elif self.fixed_joint_created :
+            # print("Fixed joint already created.")
+            # print("held_position", held_position)
+            pass
+        else:
+            print("Not creating fixed joint yet, held_position[:, 2]:", held_position[:, 2])
+
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
+        self._check_attach_condition()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
@@ -315,7 +435,7 @@ class FrankaChairEnv(DirectRLEnv):
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
-        actions = torch.zeros((self.num_envs, 6), device=self.device)
+        actions = torch.zeros((self.num_envs, 7), device=self.device)
         ctrl_target_gripper_dof_pos = 0.0
 
         # Interpret actions as target pos displacements and set pos target
@@ -351,7 +471,7 @@ class FrankaChairEnv(DirectRLEnv):
 
     def _apply_action(self):
         """Apply actions for policy as delta targets from current position."""
-        print("current actions:", self.actions)
+        # print("current actions:", self.actions)
         # Get current yaw for success checking.
         _, _, curr_yaw = torch_utils.get_euler_xyz(self.fingertip_midpoint_quat)
         self.curr_yaw = torch.where(curr_yaw > np.deg2rad(235), curr_yaw - 2 * np.pi, curr_yaw)
@@ -366,6 +486,10 @@ class FrankaChairEnv(DirectRLEnv):
 
         # Interpret actions as target rot (axis-angle) displacements
         rot_actions = self.actions[:, 3:6]
+
+        # Interpret actions as target gripper DOF velocity
+        gripper_actions = self.actions[:, 6] #
+
         if self.cfg_task.unidirectional_rot:
             rot_actions[:, 2] = -(rot_actions[:, 2] + 1.0) * 0.5  # [-1, 0]
         rot_actions = rot_actions * self.rot_threshold
@@ -398,7 +522,7 @@ class FrankaChairEnv(DirectRLEnv):
             roll=target_euler_xyz[:, 0], pitch=target_euler_xyz[:, 1], yaw=target_euler_xyz[:, 2]
         )
 
-        self.ctrl_target_gripper_dof_pos = 0.0
+        self.ctrl_target_gripper_dof_pos = 0.015 if gripper_actions < 0.0 else 0.0
         self.generate_ctrl_signals()
 
     def _set_gains(self, prop_gains, rot_deriv_scale=1.0):
@@ -428,7 +552,7 @@ class FrankaChairEnv(DirectRLEnv):
 
         # set target for gripper joints to use physx's PD controller
         self.ctrl_target_joint_pos[:, 7:9] = self.ctrl_target_gripper_dof_pos
-        self.joint_torque[:, 7:9] = 0.0
+        # self.joint_torque[:, 7:9] = 0.0
 
         self._robot.set_joint_position_target(self.ctrl_target_joint_pos)
         self._robot.set_joint_effort_target(self.joint_torque)
@@ -535,12 +659,21 @@ class FrankaChairEnv(DirectRLEnv):
 
         return rew_buf
 
+    def _remove_fixed_joint(self):
+        if self.fixed_joint_prim and self.fixed_joint_prim.IsValid():
+            stage = self.fixed_joint_prim.GetStage()
+            stage.RemovePrim(self.fixed_joint_prim.GetPath())
+            self.fixed_joint_created = False
+            self.fixed_joint_prim = None
+            print("Removed fixed joint.")
+
     def _reset_idx(self, env_ids):
         """
         We assume all envs will always be reset at the same time.
         """
         super()._reset_idx(env_ids)
-
+        print("Resetting envs:", env_ids)
+        self._remove_fixed_joint()
         self._set_assets_to_default_pose(env_ids)
         self._set_franka_to_default_pose(joints=self.cfg.ctrl.reset_joints, env_ids=env_ids)
         self.step_sim_no_action()
@@ -780,7 +913,9 @@ class FrankaChairEnv(DirectRLEnv):
 
         self.step_sim_no_action()
 
-        # Add flanking gears after servo (so arm doesn't move them).
+        # Add flanking gears after servo (so arm doesn't move them). 
+
+        
         if self.cfg_task.name == "gear_mesh" and self.cfg_task.add_flanking_gears:
             small_gear_state = self._small_gear_asset.data.default_root_state.clone()[env_ids]
             small_gear_state[:, 0:7] = fixed_state[:, 0:7]
@@ -897,6 +1032,6 @@ class FrankaChairEnv(DirectRLEnv):
 
         # Set initial gains for the episode.
         self._set_gains(self.default_gains)
-
         physics_sim_view.set_gravity(carb.Float3(*self.cfg.sim.gravity))
+        self.step_sim_no_action()
 

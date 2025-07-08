@@ -108,7 +108,16 @@ class ChairFrame(FixedAssetCfg):
     usd_path = f"{CHAIR_ASSET_DIR}/frame_test2.usd"
     diameter = 0.0081
     height = 0.025
+    mass = 1.0
     base_height = 0.0
+
+
+@configclass
+class Plug(HeldAssetCfg):
+    usd_path = f"{CHAIR_ASSET_DIR}/plug.usd"
+    diameter = 0.007986
+    height = 0.01
+    mass = 0.001  # Mass is set to 0.001 to avoid large forces during insertion.
 
 
 @configclass
@@ -116,7 +125,8 @@ class ChairAssembly(FactoryTask):
     name = "chair_assembly"
     # fixed_asset_cfg = Hole8mm()
     fixed_asset_cfg = ChairFrame()
-    held_asset_cfg = Peg8mm()
+    # held_asset_cfg = Peg8mm()
+    held_asset_cfg = Plug()
     asset_size = 8.0
     duration_s = 10.0
 
@@ -162,16 +172,16 @@ class ChairAssembly(FactoryTask):
                 max_contact_impulse=1e32,
             ),
             scale = np.array([1.0, 1.0, 1.0]), 
-            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                enabled_self_collisions=True,
-                fix_root_link=True,  # add this so the fixed asset is set to have a fixed base
-            ),
+            # articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            #     enabled_self_collisions=True,
+            #     fix_root_link=True,  # add this so the fixed asset is set to have a fixed base
+            # ),
             mass_props=sim_utils.MassPropertiesCfg(mass=fixed_asset_cfg.mass),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=1e-4),
         ),
 
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.0, -0.25, 0.79), rot=(0.707, 0.707, 0.0, 0.0), joint_pos={}, joint_vel={}
+            pos=(0.0, -0.25, 0.77), rot=(0.707, 0.707, 0.0, 0.0), joint_pos={}, joint_vel={}
         ),
         actuators={},
     )
@@ -182,7 +192,7 @@ class ChairAssembly(FactoryTask):
             usd_path=held_asset_cfg.usd_path,
             activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                disable_gravity=True,
+                disable_gravity=False,
                 max_depenetration_velocity=5.0,
                 linear_damping=0.0,
                 angular_damping=0.0,
@@ -190,12 +200,12 @@ class ChairAssembly(FactoryTask):
                 max_angular_velocity=3666.0,
                 enable_gyroscopic_forces=True,
                 solver_position_iteration_count=192,
-                solver_velocity_iteration_count=1,
+                solver_velocity_iteration_count=1, 
                 max_contact_impulse=1e32,
             ),
-            scale = np.array([0.2,0.2,0.8]), 
+            scale = np.array([0.8,0.8,0.8]), 
             mass_props=sim_utils.MassPropertiesCfg(mass=held_asset_cfg.mass),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-5, rest_offset=1e-5),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=1e-4),
         ),
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0), joint_pos={}, joint_vel={}

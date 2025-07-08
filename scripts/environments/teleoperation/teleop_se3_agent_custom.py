@@ -114,7 +114,11 @@ def pre_process_actions(
         delta_pose, gripper_command = teleop_data
         # convert to torch
         delta_pose = torch.tensor(delta_pose, dtype=torch.float, device=device).repeat(num_envs, 1)
-        return delta_pose
+        #! here the gripper command is the gripper velocity
+        gripper_vel = torch.zeros((delta_pose.shape[0], 1), dtype=torch.float, device=device)
+        gripper_vel[:] = -1 if gripper_command else 1
+        # compute actions
+        return torch.concat([delta_pose, gripper_vel], dim=1)
 
     else:
         # resolve gripper command

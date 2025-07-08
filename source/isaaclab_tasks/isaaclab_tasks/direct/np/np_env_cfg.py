@@ -71,7 +71,7 @@ class CtrlCfg:
 @configclass
 class FactoryEnvCfg(DirectRLEnvCfg):
     decimation = 8
-    action_space = 6
+    action_space = 7
     # num_*: will be overwritten to correspond to obs_order, state_order.
     observation_space = 21
     state_space = 72
@@ -192,4 +192,5 @@ class FactoryEnvCfg(DirectRLEnvCfg):
 class FrankaChairCfg(FactoryEnvCfg):
     task_name = "chair_assembly"
     task = ChairAssembly()
-    episode_length_s = 50.0
+    episode_length_s = 10.0
+    
