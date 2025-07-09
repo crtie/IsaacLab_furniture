@@ -375,9 +375,7 @@ class FrankaChairEnv(DirectRLEnv):
             to_pose = held_mat
             from_path = fixed_prim.GetPath()
             to_path = held_prim.GetPath()
-        rel_pose = to_pose * to_pose.GetInverse()
-        # rel_pose = from_pose * to_pose.GetInverse()
-        # rel_pose = rel_pose.GetInverse()
+        rel_pose = to_pose * from_pose.GetInverse()
         rel_pose = rel_pose.RemoveScaleShear()
         pos1 = Gf.Vec3f(rel_pose.ExtractTranslation())
         rot1 = Gf.Quatf(rel_pose.ExtractRotationQuat())
@@ -429,7 +427,7 @@ class FrankaChairEnv(DirectRLEnv):
 
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
-        # self._check_attach_condition()
+        self._check_attach_condition()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
