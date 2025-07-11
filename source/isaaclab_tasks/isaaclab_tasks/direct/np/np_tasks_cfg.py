@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg
+from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 import numpy as np
@@ -39,10 +39,20 @@ class RobotCfg:
 
 
 @configclass
+class ConnectionCfg:
+    connection_type: str = "plug_connection"  
+    base_path: str = ""
+    connector_path: str = ""
+    pose_to_base: np.ndarray = np.eye(4)  # 4x4 transformation matrix from connector to base.
+    axis: np.ndarray = np.array([0.0, 0.0, 1.0])  # Axis of the connection, used for rotation distance calculation.
+
+
+@configclass
 class FactoryTask:
     robot_cfg: RobotCfg = RobotCfg()
     name: str = ""
     duration_s = 5.0
+
 
     fixed_asset_cfg: FixedAssetCfg = FixedAssetCfg()
     held_asset_cfg: HeldAssetCfg = HeldAssetCfg()
@@ -119,21 +129,43 @@ class Plug(HeldAssetCfg):
     height = 0.01
     mass = 0.001  # Mass is set to 0.001 to avoid large forces during insertion.
 
+@configclass
+class backrest_asset_config():
+    usd_path = f"{CHAIR_ASSET_DIR}/backrest2.usd"
+    mass = 0.1
+
+@configclass
+class rod_asset_config():
+    usd_path = f"{CHAIR_ASSET_DIR}/rod.usd"
+    mass = 0.05
+    height = -0.05
+    base_height = 0.1
 
 @configclass
 class ChairAssembly(FactoryTask):
+    #! crtie: task_idx is used to identify the task in the environment.
+    #! crtie: task 1 is "insert the first plug into the first hole",
+    #! crtie: task 2 is "insert the rod into the frame via the plug",
+    task_idx = 2
+
+
     name = "chair_assembly"
     # fixed_asset_cfg = Hole8mm()
     fixed_asset_cfg = ChairFrame()
     # held_asset_cfg = Peg8mm()
     held_asset_cfg = Plug()
+    backrest_asset_cfg = backrest_asset_config()
+    rod_asset_cfg = rod_asset_config()
     asset_size = 8.0
     duration_s = 10.0
 
     # Robot
     hand_init_pos: list = [0.0, 0.0, 0.047]  # Relative to fixed asset tip.
     hand_init_pos_noise: list = [0.02, 0.02, 0.01]
-    hand_init_orn: list = [3.1416, 0.0, 0.0]
+    if task_idx == 1:
+        hand_init_orn: list = [3.1416, 0.0, 0.0]
+    elif task_idx == 2:
+        hand_init_orn: list = [3.1416, 0.0, 0.0]
     hand_init_orn_noise: list = [0.0, 0.0, 0.785]
 
     # Fixed Asset (applies to all tasks)
@@ -181,7 +213,7 @@ class ChairAssembly(FactoryTask):
         ),
 
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.0, -0.25, 0.78), rot=(0.707, 0.707, 0.0, 0.0), joint_pos={}, joint_vel={}
+            pos=(0.0, -0.25, 0.74), rot=(0.707, 0.707, 0.0, 0.0), joint_pos={}, joint_vel={}
         ),
         actuators={},
     )
@@ -211,4 +243,64 @@ class ChairAssembly(FactoryTask):
             pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0), joint_pos={}, joint_vel={}
         ),
         actuators={},
+    )
+
+    # backrest_asset: RigidObjectCfg = RigidObjectCfg(
+    #     prim_path="/World/envs/env_.*/object",
+    #     spawn=sim_utils.UsdFileCfg(
+    #         usd_path=backrest_asset_cfg.usd_path,
+    #         rigid_props=sim_utils.RigidBodyPropertiesCfg(
+    #             disable_gravity=False,
+    #             max_depenetration_velocity=5.0,
+    #             linear_damping=0.0,
+    #             angular_damping=0.0,
+    #             max_linear_velocity=1000.0,
+    #             max_angular_velocity=3666.0,
+    #             enable_gyroscopic_forces=True,
+    #             solver_position_iteration_count=192,
+    #             solver_velocity_iteration_count=1, 
+    #             max_contact_impulse=1e32,
+    #         ),
+    #         mass_props=sim_utils.MassPropertiesCfg(mass = backrest_asset_cfg.mass),
+    #         scale=(1., 1., 1.),
+    #     ),
+    #     init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, -0.17, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
+    # )
+
+    rod_asset: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/object",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=rod_asset_cfg.usd_path,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                max_depenetration_velocity=5.0,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_linear_velocity=1000.0,
+                max_angular_velocity=3666.0,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=192,
+                solver_velocity_iteration_count=1, 
+                max_contact_impulse=1e32,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass = 0.0),
+            scale=(1., 1., 1.),
+        ),
+        #this param is place the rod at the edge
+        # init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.21, -0.17, 0.76), rot=(0.5, -0.5, 0.5, -0.5)),
+        #this param is place the rod at the frame(not connected)
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.01, 0.09, 0.97), rot=(0.5, -0.5, 0.5, 0.5)),
+    )
+
+
+    connection_cfg: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/HeldAsset",
+        pose_to_base = np.array(
+            [[-0.97, 0.0, 0.0, 0.01717465],
+             [0.24, 0.0, 1.0, 0.0373803],
+             [0.0, 1.0, 0.0, -0.24663083],
+                [0.0, 0.0, 0.0, 1.0]]),
+        axis = np.array([0.0, 1.0, 0.0])
     )
