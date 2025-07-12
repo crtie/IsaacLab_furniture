@@ -118,7 +118,7 @@ class ChairFrame(FixedAssetCfg):
     usd_path = f"{CHAIR_ASSET_DIR}/frame_test2.usd"
     diameter = 0.0081
     height = 0.025
-    mass = 1.0
+    mass = 0.05
     base_height = 0.0
 
 
@@ -145,8 +145,9 @@ class rod_asset_config():
 class ChairAssembly(FactoryTask):
     #! crtie: task_idx is used to identify the task in the environment.
     #! crtie: task 1 is "insert the first plug into the first hole",
-    #! crtie: task 2 is "insert the rod into the frame via the plug",
-    task_idx = 1
+    #! crtie: task 2 is "insert the second plug into the second hole",
+    #! crtie: task 3 is "insert the rod into the frame via the plug",
+    task_idx = 3
 
 
     name = "chair_assembly"
@@ -164,7 +165,7 @@ class ChairAssembly(FactoryTask):
     hand_init_pos_noise: list = [0.02, 0.02, 0.01]
     if task_idx == 1:
         hand_init_orn: list = [3.1416, 0.0, 0.0]
-    elif task_idx == 2:
+    elif task_idx == 3:
         hand_init_orn: list = [3.1416, 0.0, 0.0]
     hand_init_orn_noise: list = [0.0, 0.0, 0.785]
 
@@ -218,37 +219,11 @@ class ChairAssembly(FactoryTask):
         actuators={},
     )
 
-    # fixed_asset: RigidObjectCfg = RigidObjectCfg(
-    #     prim_path="/World/envs/env_.*/FixedAsset",
-    #     spawn=sim_utils.UsdFileCfg(
-    #         usd_path=fixed_asset_cfg.usd_path,
-    #         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-    #             disable_gravity=False,
-    #             max_depenetration_velocity=5.0,
-    #             linear_damping=0.0,
-    #             angular_damping=0.0,
-    #             max_linear_velocity=1000.0,
-    #             max_angular_velocity=3666.0,
-    #             enable_gyroscopic_forces=True,
-    #             solver_position_iteration_count=192,
-    #             solver_velocity_iteration_count=1, 
-    #             max_contact_impulse=1e32,
-    #         ),
-    #         mass_props=sim_utils.MassPropertiesCfg(mass = 0.1),
-    #         scale=(1., 1., 1.),
-    #         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-    #             articulation_enabled=False,  # Set to False for RigidObject
-    #         ),
-    #         collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=1e-4),
-    #     ),
-    #     init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, -0.25, 0.74), rot=(0.707, 0.707, 0.0, 0.0)),
-    # )
 
-    held_asset: ArticulationCfg = ArticulationCfg(
-        prim_path="/World/envs/env_.*/HeldAsset",
+    plug1: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Plug1",
         spawn=sim_utils.UsdFileCfg(
             usd_path=held_asset_cfg.usd_path,
-            activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
                 max_depenetration_velocity=5.0,
@@ -261,40 +236,44 @@ class ChairAssembly(FactoryTask):
                 solver_velocity_iteration_count=1, 
                 max_contact_impulse=1e32,
             ),
+            mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
             scale = np.array([0.8,0.8,0.8]), 
-            mass_props=sim_utils.MassPropertiesCfg(mass=held_asset_cfg.mass),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=1e-4),
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                articulation_enabled=False,  # Set to False for RigidObject
+            ),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-3, rest_offset=1e-3),
         ),
-        init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0), joint_pos={}, joint_vel={}
-        ),
-        actuators={},
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
 
-    # backrest_asset: RigidObjectCfg = RigidObjectCfg(
-    #     prim_path="/World/envs/env_.*/object",
-    #     spawn=sim_utils.UsdFileCfg(
-    #         usd_path=backrest_asset_cfg.usd_path,
-    #         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-    #             disable_gravity=False,
-    #             max_depenetration_velocity=5.0,
-    #             linear_damping=0.0,
-    #             angular_damping=0.0,
-    #             max_linear_velocity=1000.0,
-    #             max_angular_velocity=3666.0,
-    #             enable_gyroscopic_forces=True,
-    #             solver_position_iteration_count=192,
-    #             solver_velocity_iteration_count=1, 
-    #             max_contact_impulse=1e32,
-    #         ),
-    #         mass_props=sim_utils.MassPropertiesCfg(mass = backrest_asset_cfg.mass),
-    #         scale=(1., 1., 1.),
-    #     ),
-    #     init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, -0.17, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
-    # )
+    plug2: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Plug2",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=held_asset_cfg.usd_path,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                max_depenetration_velocity=5.0,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_linear_velocity=1000.0,
+                max_angular_velocity=3666.0,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=192,
+                solver_velocity_iteration_count=1, 
+                max_contact_impulse=1e32,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
+            scale = np.array([0.8,0.8,0.8]), 
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                articulation_enabled=False,  # Set to False for RigidObject
+            ),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-3, rest_offset=1e-3),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
+    )
 
     rod_asset: RigidObjectCfg = RigidObjectCfg(
-        prim_path="/World/envs/env_.*/object",
+        prim_path="/World/envs/env_.*/rod",
         spawn=sim_utils.UsdFileCfg(
             usd_path=rod_asset_cfg.usd_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
@@ -320,14 +299,27 @@ class ChairAssembly(FactoryTask):
     )
 
 
-    connection_cfg: ConnectionCfg = ConnectionCfg(
+    connection_cfg1: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/HeldAsset",
+        connector_path = "/World/envs/env_.*/Plug1",
         pose_to_base = np.array(
             [[-0.97, 0.0, 0.0, 0.01717465],
-             [0.24, 0.0, 1.0, 0.0373803],
-             [0.0, 1.0, 0.0, -0.24663083],
-                [0.0, 0.0, 0.0, 1.0]]),
+            [0.24, 0.0, 1.0, 0.0373803],
+            [0.0, 1.0, 0.0, -0.24663083],
+            [0.0, 0.0, 0.0, 1.0]]),
+        axis = np.array([0.0, 1.0, 0.0])
+    )
+
+    connection_cfg2: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/Plug2",
+        # 这个是不准的
+        pose_to_base = np.array(
+            [[ 0.99311733, 0.0, -0.11345644,  0.0111441 ],
+            [-0.1134584,   0.0, -0.9935415,   0.04108539],
+            [ 0.02907163,  1.0, -0.00172206 ,-0.24300204],
+            [ 0.,          0.,          0.,          1.]]),
         axis = np.array([0.0, 1.0, 0.0])
     )
