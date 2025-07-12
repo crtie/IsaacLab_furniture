@@ -192,6 +192,7 @@ class FrankaChairEnv(DirectRLEnv):
 
         self._robot = Articulation(self.cfg.robot)
         self._fixed_asset = Articulation(self.cfg_task.fixed_asset)
+        # self._fixed_asset = RigidObject(self.cfg_task.fixed_asset)
         self._held_asset = Articulation(self.cfg_task.held_asset)
         # self._backrest_asset = RigidObject(self.cfg_task.backrest_asset)
         self._rod_asset = RigidObject(self.cfg_task.rod_asset)
@@ -712,6 +713,13 @@ class FrankaChairEnv(DirectRLEnv):
         self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:], env_ids=env_ids)
         self._fixed_asset.reset()
 
+        rod_state = self._rod_asset.data.default_root_state.clone()[env_ids]
+        rod_state[:, 0:3] += self.scene.env_origins[env_ids]
+        rod_state[:, 7:] = 0.0
+        self._rod_asset.write_root_pose_to_sim(rod_state[:, 0:7], env_ids=env_ids)
+        self._rod_asset.write_root_velocity_to_sim(rod_state[:, 7:], env_ids=env_ids)
+        self._rod_asset.reset()   
+
     def set_pos_inverse_kinematics(self, env_ids):
         """Set robot joint position using DLS IK."""
         ik_time = 0.0
@@ -769,9 +777,25 @@ class FrankaChairEnv(DirectRLEnv):
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
         elif self.cfg_task.name == "chair_assembly" and self.cfg_task.task_idx == 2:
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
-            held_asset_relative_pos[:, 2] = self.cfg_task.rod_asset_cfg.height
-            held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
-            held_asset_relative_pos[:, 0] += 0.10
+            # # z axis
+            # held_asset_relative_pos[:, 0] = 0.16
+
+            # # left & right axis
+            # held_asset_relative_pos[:, 1] = 0.3
+
+            # # front & back axis
+            # held_asset_relative_pos[:, 2] = -0.02
+
+            # z axis
+            held_asset_relative_pos[:, 0] = 0.16
+
+            # left & right axis
+            held_asset_relative_pos[:, 1] = 0.0
+
+            # front & back axis
+            held_asset_relative_pos[:, 2] = -0.02
+
+
         else:
             raise NotImplementedError("Task not implemented")
 
@@ -780,6 +804,15 @@ class FrankaChairEnv(DirectRLEnv):
             # Rotate along z-axis of frame for default position.
             initial_rot_deg = self.cfg_task.held_asset_rot_init
             rot_yaw_euler = torch.tensor([0.0, 0.0, initial_rot_deg * np.pi / 180.0], device=self.device).repeat(
+                self.num_envs, 1
+            )
+            held_asset_relative_quat = torch_utils.quat_from_euler_xyz(
+                roll=rot_yaw_euler[:, 0], pitch=rot_yaw_euler[:, 1], yaw=rot_yaw_euler[:, 2]
+            )
+
+        if self.cfg_task.name == "chair_assembly" and self.cfg_task.task_idx == 2:
+            # Rotate along z-axis of frame for default position.
+            rot_yaw_euler = torch.tensor([0.0, 1.57, 0.0], device=self.device).repeat(
                 self.num_envs, 1
             )
             held_asset_relative_quat = torch_utils.quat_from_euler_xyz(
@@ -1037,7 +1070,7 @@ class FrankaChairEnv(DirectRLEnv):
             # Compute the frame on the bolt that would be used as observation: fixed_pos_obs_frame
             # For example, the tip of the bolt can be used as the observation frame
             rod_tip_pos_local = torch.zeros_like(self.rod_pos)
-            rod_tip_pos_local[:, 2] += self.cfg_task.rod_asset_cfg.height
+            # rod_tip_pos_local[:, 2] += self.cfg_task.rod_asset_cfg.height
             rod_tip_pos_local[:, 2] += self.cfg_task.rod_asset_cfg.base_height
             rod_tip_quat_local = (
             torch.tensor([1.0, 0.0, 1.0, 0.0], device=self.device).unsqueeze(0).repeat(self.num_envs, 1))
@@ -1147,7 +1180,7 @@ class FrankaChairEnv(DirectRLEnv):
 
             # Add asset in hand randomization
             rand_sample = torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device)
-            self.held_asset_pos_noise = 0.1 * (rand_sample - 0.5)  # [-1, 1]
+            self.held_asset_pos_noise = 0.001 * (rand_sample - 0.5)  # [-1, 1]
 
             held_asset_pos_noise = torch.tensor(self.cfg_task.held_asset_pos_noise, device=self.device)
             self.held_asset_pos_noise = self.held_asset_pos_noise @ torch.diag(held_asset_pos_noise)

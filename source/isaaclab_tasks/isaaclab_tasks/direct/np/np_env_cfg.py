@@ -192,5 +192,5 @@ class FactoryEnvCfg(DirectRLEnvCfg):
 class FrankaChairCfg(FactoryEnvCfg):
     task_name = "chair_assembly"
     task = ChairAssembly()
-    episode_length_s = 3.0
+    episode_length_s = 30.0
 
