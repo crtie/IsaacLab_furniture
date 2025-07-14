@@ -147,7 +147,7 @@ class ChairAssembly(FactoryTask):
     #! crtie: task 1 is "insert the first plug into the first hole",
     #! crtie: task 2 is "insert the second plug into the second hole",
     #! crtie: task 3 is "insert the rod into the frame via the plug",
-    task_idx = 2
+    task_idx = 3
 
 
     name = "chair_assembly"
@@ -316,7 +316,7 @@ class ChairAssembly(FactoryTask):
         pose_to_base = np.array(
             [[-0.97, 0.0, 0.0, 0.01717465],
             [0.24, 0.0, 1.0, 0.0373803],
-            [0.0, 1.0, 0.0, -0.27073083],
+            [0.0, 1.0, 0.0, -0.27053083],
             [0.0, 0.0, 0.0, 1.0]]),
         axis = np.array([0.0, 1.0, 0.0])
     )
