@@ -366,9 +366,11 @@ class FrankaChairEnv(DirectRLEnv):
         if connection_idx == 1:
             held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
             joint_path = "/World/envs/env_0/FixedJoint1"
+            connection_cfg = self.cfg_task.connection_cfg1
         elif connection_idx == 2:
             held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
             joint_path = "/World/envs/env_0/FixedJoint2"
+            connection_cfg = self.cfg_task.connection_cfg2
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
         
 
@@ -405,8 +407,14 @@ class FrankaChairEnv(DirectRLEnv):
 
         rel_pose = to_pose * from_pose.GetInverse()
         rel_pose = rel_pose.RemoveScaleShear()
-        pos1 = Gf.Vec3f(rel_pose.ExtractTranslation())
-        rot1 = Gf.Quatf(rel_pose.ExtractRotationQuat())
+        # pos1 = Gf.Vec3f(rel_pose.ExtractTranslation())
+        # rot1 = Gf.Quatf(rel_pose.ExtractRotationQuat())
+
+        # rel_mat = self._get_real_mat()
+        rel_mat = connection_cfg.pose_to_base
+        pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
+        rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
+        rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
 
 
         # set the velocity of the held and fixed assets to zero before creating the joint
@@ -440,14 +448,15 @@ class FrankaChairEnv(DirectRLEnv):
     def _check_attach_condition(self):
         rel_mat = self._get_real_mat()
         gt_real_mat = self._connection_cfg.pose_to_base
-        # print("rel_mat:", rel_mat)
+        print("rel_mat:", rel_mat)
         # print("gt_real_mat:", gt_real_mat)
         # bp()
-        R_dist, t_dist = SE3dist(rel_mat, gt_real_mat,self._connection_cfg.axis)
+        R_dist, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat,self._connection_cfg.axis)
         print("R_dist:", R_dist)
-        print("t_dist:", t_dist)
+        print("t_tangent:", t_tangent)
+        print("t_normal:", t_normal)
 
-        if not self.fixed_joint_created and R_dist < 0.1 and t_dist < 0.005:
+        if not self.fixed_joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.005:
             self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
             self.fixed_joint_created = True
             print("Creating fixed joint.")
@@ -1025,8 +1034,6 @@ class FrankaChairEnv(DirectRLEnv):
             # Add asset in hand randomization
             rand_sample = torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device)
             self.held_asset_pos_noise = 2 * (rand_sample - 0.5)  # [-1, 1]
-            if self.cfg_task.name == "gear_mesh":
-                self.held_asset_pos_noise[:, 2] = -rand_sample[:, 2]  # [-1, 0]
 
             held_asset_pos_noise = torch.tensor(self.cfg_task.held_asset_pos_noise, device=self.device)
             self.held_asset_pos_noise = self.held_asset_pos_noise @ torch.diag(held_asset_pos_noise)

@@ -163,10 +163,8 @@ class ChairAssembly(FactoryTask):
     # Robot
     hand_init_pos: list = [0.0, 0.0, 0.047]  # Relative to fixed asset tip.
     hand_init_pos_noise: list = [0.02, 0.02, 0.01]
-    if task_idx == 1:
-        hand_init_orn: list = [3.1416, 0.0, 0.0]
-    elif task_idx == 3:
-        hand_init_orn: list = [3.1416, 0.0, 0.0]
+    hand_init_orn: list = [3.1416, 0.0, 0.0]
+
     hand_init_orn_noise: list = [0.0, 0.0, 0.785]
 
     # Fixed Asset (applies to all tasks)
@@ -210,7 +208,7 @@ class ChairAssembly(FactoryTask):
                 fix_root_link=True,  # add this so the fixed asset is set to have a fixed base
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass=fixed_asset_cfg.mass),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=1e-4),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=0.0),
         ),
 
         init_state=ArticulationCfg.InitialStateCfg(
@@ -315,11 +313,10 @@ class ChairAssembly(FactoryTask):
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Plug2",
-        # 这个是不准的
         pose_to_base = np.array(
-            [[ 0.710456,   0.0,  0.7037153,   0.01004685],
-            [ 0.703737,    0.0, -0.7104561,   0.03917328],
-            [ 0.00253597,  1.0,   0.00607965, -0.26671845],
-            [ 0.0, 0.0, 0.0, 1.0]]),
+            [[-0.97, 0.0, 0.0, 0.01717465],
+            [0.24, 0.0, 1.0, 0.0373803],
+            [0.0, 1.0, 0.0, -0.27073083],
+            [0.0, 0.0, 0.0, 1.0]]),
         axis = np.array([0.0, 1.0, 0.0])
     )
