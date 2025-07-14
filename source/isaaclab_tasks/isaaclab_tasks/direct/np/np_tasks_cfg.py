@@ -147,7 +147,7 @@ class ChairAssembly(FactoryTask):
     #! crtie: task 1 is "insert the first plug into the first hole",
     #! crtie: task 2 is "insert the second plug into the second hole",
     #! crtie: task 3 is "insert the rod into the frame via the plug",
-    task_idx = 3
+    task_idx = 2
 
 
     name = "chair_assembly"
@@ -317,9 +317,9 @@ class ChairAssembly(FactoryTask):
         connector_path = "/World/envs/env_.*/Plug2",
         # 这个是不准的
         pose_to_base = np.array(
-            [[ 0.99311733, 0.0, -0.11345644,  0.0111441 ],
-            [-0.1134584,   0.0, -0.9935415,   0.04108539],
-            [ 0.02907163,  1.0, -0.00172206 ,-0.24300204],
-            [ 0.,          0.,          0.,          1.]]),
+            [[ 0.710456,   0.0,  0.7037153,   0.01004685],
+            [ 0.703737,    0.0, -0.7104561,   0.03917328],
+            [ 0.00253597,  1.0,   0.00607965, -0.26671845],
+            [ 0.0, 0.0, 0.0, 1.0]]),
         axis = np.array([0.0, 1.0, 0.0])
     )

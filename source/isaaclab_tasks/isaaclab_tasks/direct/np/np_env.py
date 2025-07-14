@@ -431,12 +431,8 @@ class FrankaChairEnv(DirectRLEnv):
         joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
 
 
-
-
         self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
-        self.fixed_joint_created = True
         self.step_sim_no_action()
-        print(f"Fixed joint created at {joint_path} with relative pose: {rel_pose}")
 
 
 
@@ -444,7 +440,7 @@ class FrankaChairEnv(DirectRLEnv):
     def _check_attach_condition(self):
         rel_mat = self._get_real_mat()
         gt_real_mat = self._connection_cfg.pose_to_base
-        print("rel_mat:", rel_mat)
+        # print("rel_mat:", rel_mat)
         # print("gt_real_mat:", gt_real_mat)
         # bp()
         R_dist, t_dist = SE3dist(rel_mat, gt_real_mat,self._connection_cfg.axis)
@@ -452,7 +448,8 @@ class FrankaChairEnv(DirectRLEnv):
         print("t_dist:", t_dist)
 
         if not self.fixed_joint_created and R_dist < 0.1 and t_dist < 0.005:
-            self._create_fixed_joint()
+            self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
+            self.fixed_joint_created = True
             print("Creating fixed joint.")
         elif self.fixed_joint_created :
             print("Fixed joint already created.")
@@ -461,7 +458,7 @@ class FrankaChairEnv(DirectRLEnv):
 
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
-        # self._check_attach_condition()
+        self._check_attach_condition()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
