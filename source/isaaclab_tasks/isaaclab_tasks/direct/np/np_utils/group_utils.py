@@ -44,7 +44,7 @@ def bgdR(Rgts, Rps):
     theta = torch.clamp(0.5 * (Rt - 1), -1 + 1e-6, 1 - 1e-6)
     return torch.acos(theta)
 
-def SE3dist(Rgts, Rps, axis=None):
+def SE3dist(Rgts, Rps, connection_cfg=None):
     """
     Compute the distance between two SE3 transformations.
     Args:
@@ -54,6 +54,9 @@ def SE3dist(Rgts, Rps, axis=None):
         R_dist: Rotation distance in radians
         t_dist: Translation distance
     """
+    axis_r = connection_cfg.axis_r if connection_cfg is not None else None
+    axis_t = connection_cfg.axis_t if connection_cfg is not None else None
+
     if isinstance(Rgts, np.ndarray):
         Rgts = torch.tensor(Rgts, dtype=torch.float32)
     if isinstance(Rps, np.ndarray):
@@ -71,22 +74,22 @@ def SE3dist(Rgts, Rps, axis=None):
     t_p = Rps[:, :3, 3]
     
     # Compute rotation distance
-    if axis is None:
+    if axis_r is None:
         R_dist = bgdR(Rgt, Rp)
-        t_tangential = torch.norm(t_gt - t_p, dim=1)
-        # when axis is None, we consider the full translation distance, where the tangential is equal to normal distance
-        t_normal = t_tangential
     else:
         R_rel = np.array(torch.bmm(Rgt.permute(0, 2, 1), Rp))
         r = R.from_matrix(R_rel).as_rotvec()
-        axis = axis / np.linalg.norm(axis)
-        r_proj = r - np.dot(r, axis) * axis
+        axis_r = axis_r / np.linalg.norm(axis_r)
+        r_proj = r - np.dot(r, axis_r) * axis_r
         R_dist = np.linalg.norm(r_proj)
 
+    if axis_t is None:
+        # when axis is None, we consider the full translation distance, where the tangential is equal to normal distance
+        t_tangential = torch.norm(t_gt - t_p, dim=1)
+        t_normal = t_tangential
+    else:
         t_diff = t_gt - t_p
-        t_tangential = np.linalg.norm(t_diff * axis)
-        t_normal = np.linalg.norm(t_diff - t_tangential * axis)
-
-    
+        t_tangential = np.linalg.norm(t_diff * axis_t)
+        t_normal = np.linalg.norm(t_diff - t_tangential * axis_t)
 
     return R_dist, t_tangential, t_normal

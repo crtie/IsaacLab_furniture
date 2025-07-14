@@ -44,8 +44,8 @@ class ConnectionCfg:
     base_path: str = ""
     connector_path: str = ""
     pose_to_base: np.ndarray = np.eye(4)  # 4x4 transformation matrix from connector to base.
-    axis: np.ndarray = np.array([0.0, 0.0, 1.0])  # Axis of the connection, used for rotation distance calculation.
-
+    axis_t: np.ndarray = np.array([0.0, 0.0, 1.0])  # Axis of the connection, describe the connection direction.
+    axis_r: np.ndarray = np.array([0.0, 0.0, 1.0])  # Axis of the connection, describe the rotation symmetry of the connection, i.e. the axis around which the connector can rotate relative to the base.
 
 @configclass
 class FactoryTask:
@@ -138,7 +138,7 @@ class backrest_asset_config():
 class rod_asset_config():
     usd_path = f"{CHAIR_ASSET_DIR}/rod2.usd"
     mass = 0.05
-    height = 0.3
+    height = -0.02
     base_height = 0.25
 
 @configclass
@@ -163,9 +163,14 @@ class ChairAssembly(FactoryTask):
     # Robot
     hand_init_pos: list = [0.0, 0.0, 0.047]  # Relative to fixed asset tip.
     hand_init_pos_noise: list = [0.02, 0.02, 0.01]
-    hand_init_orn: list = [3.1416, 0.0, 0.0]
 
-    hand_init_orn_noise: list = [0.0, 0.0, 0.785]
+    if task_idx == 1 or task_idx == 2:
+        # For the first two tasks, the hand is oriented towards the fixed asset.
+        hand_init_orn: list = [3.1416, 0.0, 0.0]
+        hand_init_orn_noise: list = [0.0, 0.0, 0.785]
+    elif task_idx == 3:
+        hand_init_orn: list = [3.1416, 0.0, 1.5708]  # For the rod insertion task, the hand is oriented towards the rod.
+        hand_init_orn_noise: list = [0.0, 0.0, 0.0]
 
     # Fixed Asset (applies to all tasks)
     # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
@@ -271,7 +276,7 @@ class ChairAssembly(FactoryTask):
     )
 
     rod_asset: RigidObjectCfg = RigidObjectCfg(
-        prim_path="/World/envs/env_.*/rod",
+        prim_path="/World/envs/env_.*/Rod",
         spawn=sim_utils.UsdFileCfg(
             usd_path=rod_asset_cfg.usd_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
@@ -306,7 +311,8 @@ class ChairAssembly(FactoryTask):
             [0.24, 0.0, 1.0, 0.0373803],
             [0.0, 1.0, 0.0, -0.24663083],
             [0.0, 0.0, 0.0, 1.0]]),
-        axis = np.array([0.0, 1.0, 0.0])
+        axis_r = np.array([0.0, 1.0, 0.0]),
+        axis_t = np.array([0.0, 1.0, 0.0]),
     )
 
     connection_cfg2: ConnectionCfg = ConnectionCfg(
@@ -318,5 +324,19 @@ class ChairAssembly(FactoryTask):
             [0.24, 0.0, 1.0, 0.0373803],
             [0.0, 1.0, 0.0, -0.27053083],
             [0.0, 0.0, 0.0, 1.0]]),
-        axis = np.array([0.0, 1.0, 0.0])
+        axis_r = np.array([0.0, 1.0, 0.0]),
+        axis_t = np.array([0.0, 1.0, 0.0]),
+    )
+
+    connection_cfg3: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/Rod",
+        pose_to_base = np.array(
+            [[0.0, -1.0, 0.0,  3.9181127e-03],
+            [ 1.0, 0.0,  0.0,  2.2797813e-01],
+            [0.0, -0.0,  1.0, -2.3246072e-01],
+            [ 0.0,  0.0,  0.0,  1.0]]),
+        axis_r = None,
+        axis_t = np.array([0.0, 1.0, 0.0]),
     )

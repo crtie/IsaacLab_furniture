@@ -99,18 +99,7 @@ class FrankaChairEnv(DirectRLEnv):
 
         # Held asset
         held_base_x_offset = 0.0
-        if self.cfg_task.name == "peg_insert":
-            held_base_z_offset = 0.0
-        elif self.cfg_task.name == "gear_mesh":
-            gear_base_offset = self._get_target_gear_base_offset()
-            held_base_x_offset = gear_base_offset[0]
-            held_base_z_offset = gear_base_offset[2]
-        elif self.cfg_task.name == "nut_thread":
-            held_base_z_offset = self.cfg_task.fixed_asset_cfg.base_height
-        elif self.cfg_task.name == "chair_assembly":
-            held_base_z_offset = 0.0
-        else:
-            print(f"Task {self.cfg_task.name} not implemented.")
+        held_base_z_offset = 0.0
 
         self.held_base_pos_local = torch.tensor([0.0, 0.0, 0.0], device=self.device).repeat((self.num_envs, 1))
         self.held_base_pos_local[:, 0] = held_base_x_offset
@@ -175,8 +164,6 @@ class FrankaChairEnv(DirectRLEnv):
         self._fixed_asset = Articulation(self.cfg_task.fixed_asset)
 
 
-        
-
         if self.cfg_task.task_idx == 1:
             self._plug1 = RigidObject(self.cfg_task.plug1)
             self._held_asset = self._plug1
@@ -194,7 +181,7 @@ class FrankaChairEnv(DirectRLEnv):
             self._plug2 = RigidObject(self.cfg_task.plug2)
             self._rod_asset = RigidObject(self.cfg_task.rod_asset)
             self._held_asset = self._rod_asset
-            self._connection_cfg = self.cfg_task.connection_cfg2
+            self._connection_cfg = self.cfg_task.connection_cfg3
 
         # self._backrest_asset = RigidObject(self.cfg_task.backrest_asset)
         # self._rod_asset = RigidObject(self.cfg_task.rod_asset)
@@ -322,16 +309,7 @@ class FrankaChairEnv(DirectRLEnv):
 
 
     def _get_real_mat(self):
-        from pxr import Usd, UsdPhysics, PhysxSchema, Sdf, Gf
-        from omni.physx.scripts import utils
-        import omni.usd
-        stage = omni.usd.get_context().get_stage()
-
-        if self.cfg_task.task_idx == 1:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
-        elif self.cfg_task.task_idx == 2:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
-        fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
+        from pxr import Gf
 
 
         held_pos = self.held_pos[0].cpu().numpy()
@@ -371,6 +349,10 @@ class FrankaChairEnv(DirectRLEnv):
             held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
             joint_path = "/World/envs/env_0/FixedJoint2"
             connection_cfg = self.cfg_task.connection_cfg2
+        elif connection_idx == 3:
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Rod")
+            joint_path = "/World/envs/env_0/FixedJoint3"
+            connection_cfg = self.cfg_task.connection_cfg3
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
         
 
@@ -388,6 +370,11 @@ class FrankaChairEnv(DirectRLEnv):
             held_pos = self._plug2.data.root_pos_w - self.scene.env_origins
             held_pos = held_pos[0].cpu().numpy()
             held_quat = self._plug2.data.root_quat_w
+            held_quat = held_quat[0].cpu().numpy()
+        elif connection_idx == 3:
+            held_pos = self._rod_asset.data.root_pos_w - self.scene.env_origins
+            held_pos = held_pos[0].cpu().numpy()
+            held_quat = self._rod_asset.data.root_quat_w
             held_quat = held_quat[0].cpu().numpy()
 
 
@@ -451,7 +438,7 @@ class FrankaChairEnv(DirectRLEnv):
         print("rel_mat:", rel_mat)
         # print("gt_real_mat:", gt_real_mat)
         # bp()
-        R_dist, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat,self._connection_cfg.axis)
+        R_dist, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
         print("R_dist:", R_dist)
         print("t_tangent:", t_tangent)
         print("t_normal:", t_normal)
@@ -723,18 +710,6 @@ class FrankaChairEnv(DirectRLEnv):
         self.step_sim_no_action()
         self.randomize_initial_state(env_ids)
 
-    def _get_target_gear_base_offset(self):
-        """Get offset of target gear from the gear base asset."""
-        target_gear = self.cfg_task.target_gear
-        if target_gear == "gear_large":
-            gear_base_offset = self.cfg_task.fixed_asset_cfg.large_gear_base_offset
-        elif target_gear == "gear_medium":
-            gear_base_offset = self.cfg_task.fixed_asset_cfg.medium_gear_base_offset
-        elif target_gear == "gear_small":
-            gear_base_offset = self.cfg_task.fixed_asset_cfg.small_gear_base_offset
-        else:
-            raise ValueError(f"{target_gear} not valid in this context!")
-        return gear_base_offset
 
     def _set_assets_to_default_pose(self, env_ids):
         """Move assets to default pose before randomization."""
@@ -798,57 +773,21 @@ class FrankaChairEnv(DirectRLEnv):
 
     def get_handheld_asset_relative_pose(self):
         """Get default relative pose between help asset and fingertip."""
-        if self.cfg_task.name == "peg_insert":
-            held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
-            held_asset_relative_pos[:, 2] = self.cfg_task.held_asset_cfg.height
-            held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
-        elif self.cfg_task.name == "gear_mesh":
-            held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
-            gear_base_offset = self._get_target_gear_base_offset()
-            held_asset_relative_pos[:, 0] += gear_base_offset[0]
-            held_asset_relative_pos[:, 2] += gear_base_offset[2]
-            held_asset_relative_pos[:, 2] += self.cfg_task.held_asset_cfg.height / 2.0 * 1.1
-        elif self.cfg_task.name == "nut_thread":
-            held_asset_relative_pos = self.held_base_pos_local
-        elif self.cfg_task.name == "chair_assembly" and (self.cfg_task.task_idx == 1 or self.cfg_task.task_idx == 2):
+        if self.cfg_task.name == "chair_assembly" and (self.cfg_task.task_idx == 1 or self.cfg_task.task_idx == 2):
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
             held_asset_relative_pos[:, 2] = self.cfg_task.held_asset_cfg.height
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
         elif self.cfg_task.name == "chair_assembly" and self.cfg_task.task_idx == 3:
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
-            # # z axis
-            # held_asset_relative_pos[:, 0] = 0.16
-
-            # # left & right axis
-            # held_asset_relative_pos[:, 1] = 0.3
-
-            # # front & back axis
-            # held_asset_relative_pos[:, 2] = -0.02
-
-            # z axis
-            held_asset_relative_pos[:, 0] = 0.16
-
-            # left & right axis
-            held_asset_relative_pos[:, 1] = 0.0
-
-            # front & back axis
-            held_asset_relative_pos[:, 2] = -0.02
-
-
+            held_asset_relative_pos[:, 2] = self.cfg_task.rod_asset_cfg.height
+            held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
+            held_asset_relative_pos[:, 0] = -0.02
+            held_asset_relative_pos[:, 1] = 0.01
+            # held_asset_relative_pos[:, 2] = 0.05
         else:
             raise NotImplementedError("Task not implemented")
 
         held_asset_relative_quat = self.identity_quat
-
-
-        if self.cfg_task.name == "chair_assembly" and self.cfg_task.task_idx == 3:
-            # Rotate along z-axis of frame for default position.
-            rot_yaw_euler = torch.tensor([0.0, 1.57, 0.0], device=self.device).repeat(
-                self.num_envs, 1
-            )
-            held_asset_relative_quat = torch_utils.quat_from_euler_xyz(
-                roll=rot_yaw_euler[:, 0], pitch=rot_yaw_euler[:, 1], yaw=rot_yaw_euler[:, 2]
-            )
 
         return held_asset_relative_pos, held_asset_relative_quat
 
@@ -1248,25 +1187,31 @@ class FrankaChairEnv(DirectRLEnv):
             )
 
             # Add asset in hand randomization
-            # rand_sample = torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device)
-            # self.held_asset_pos_noise = 0.001 * (rand_sample - 0.5)  # [-1, 1]
+            rand_sample = torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device)
+            self.held_asset_pos_noise = 0.001 * (rand_sample - 0.5)  # [-1, 1]
 
-            # held_asset_pos_noise = torch.tensor(self.cfg_task.held_asset_pos_noise, device=self.device)
-            # self.held_asset_pos_noise = self.held_asset_pos_noise @ torch.diag(held_asset_pos_noise)
-            # translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
-            #     q1=translated_held_asset_quat,
-            #     t1=translated_held_asset_pos,
-            #     q2=self.identity_quat,
-            #     t2=self.held_asset_pos_noise,
-            # )
+            held_asset_pos_noise = torch.tensor(self.cfg_task.held_asset_pos_noise, device=self.device)
+            self.held_asset_pos_noise = self.held_asset_pos_noise @ torch.diag(held_asset_pos_noise)
+            translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
+                q1=translated_held_asset_quat,
+                t1=translated_held_asset_pos,
+                q2=self.identity_quat,
+                t2=self.held_asset_pos_noise,
+            )
 
-            # held_state = self._held_asset.data.default_root_state.clone()
-            # held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
-            # held_state[:, 3:7] = translated_held_asset_quat 
-            # held_state[:, 7:] = 0.0
-            # self._rod_asset.write_root_pose_to_sim(held_state[:, 0:7])
-            # self._rod_asset.write_root_velocity_to_sim(held_state[:, 7:])
-            # self._rod_asset.reset()
+            rot_euler = torch.tensor([0.0, 1.5707, -1.5707], device=self.device).repeat(
+                self.num_envs, 1
+            )
+            translated_held_asset_quat = torch_utils.quat_from_euler_xyz(
+                roll=rot_euler[:, 0], pitch=rot_euler[:, 1], yaw=rot_euler[:, 2]
+            )
+            held_state = self._held_asset.data.default_root_state.clone()
+            held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
+            held_state[:, 3:7] = translated_held_asset_quat 
+            held_state[:, 7:] = 0.0
+            self._rod_asset.write_root_pose_to_sim(held_state[:, 0:7])
+            self._rod_asset.write_root_velocity_to_sim(held_state[:, 7:])
+            self._rod_asset.reset()
 
 
 
