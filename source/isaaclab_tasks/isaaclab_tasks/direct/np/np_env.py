@@ -167,7 +167,7 @@ class FrankaChairEnv(DirectRLEnv):
         if self.cfg_task.task_idx == 1:
             self._plug1 = RigidObject(self.cfg_task.plug1)
             self._held_asset = self._plug1
-            self._connection_cfg = self.cfg_task.connection_cfg1
+            self._connection_cfg = self.cfg_task.connection_cfg4
 
     
         if self.cfg_task.task_idx ==2:
@@ -335,67 +335,114 @@ class FrankaChairEnv(DirectRLEnv):
         rel_mat_np[:3, 3] = pos
         return rel_mat_np
 
-    def _create_fixed_joint(self, connection_idx):
-        """Create a fixed joint between the held asset and the fixed asset."""
+    # def _create_fixed_joint(self, connection_idx):
+    #     """Create a fixed joint between the held asset and the fixed asset."""
+    #     from pxr import Usd, UsdPhysics, PhysxSchema, Sdf, Gf
+    #     from omni.physx.scripts import utils
+    #     import omni.usd
+    #     stage = omni.usd.get_context().get_stage()
+    #     if connection_idx == 1:
+    #         held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
+    #         joint_path = "/World/envs/env_0/FixedJoint1"
+    #         connection_cfg = self.cfg_task.connection_cfg1
+    #     elif connection_idx == 2:
+    #         held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
+    #         joint_path = "/World/envs/env_0/FixedJoint2"
+    #         connection_cfg = self.cfg_task.connection_cfg2
+    #     elif connection_idx == 3:
+    #         held_prim = stage.GetPrimAtPath("/World/envs/env_0/Rod")
+    #         joint_path = "/World/envs/env_0/FixedJoint3"
+    #         connection_cfg = self.cfg_task.connection_cfg3
+    #     fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
+        
+
+    #     # 获取 held/fixed asset 的物理 pose（世界坐标）
+
+    #     fixed_pos = self.fixed_pos[0].cpu().numpy()
+    #     fixed_quat = self.fixed_quat[0].cpu().numpy()
+
+    #     if connection_idx == 1:
+    #         held_pos = self._plug1.data.root_pos_w - self.scene.env_origins
+    #         held_pos = held_pos[0].cpu().numpy()
+    #         held_quat = self._plug1.data.root_quat_w
+    #         held_quat = held_quat[0].cpu().numpy()
+    #     elif connection_idx == 2:
+    #         held_pos = self._plug2.data.root_pos_w - self.scene.env_origins
+    #         held_pos = held_pos[0].cpu().numpy()
+    #         held_quat = self._plug2.data.root_quat_w
+    #         held_quat = held_quat[0].cpu().numpy()
+    #     elif connection_idx == 3:
+    #         held_pos = self._rod_asset.data.root_pos_w - self.scene.env_origins
+    #         held_pos = held_pos[0].cpu().numpy()
+    #         held_quat = self._rod_asset.data.root_quat_w
+    #         held_quat = held_quat[0].cpu().numpy()
+
+
+    #     held_mat = Gf.Matrix4d()
+    #     held_mat.SetRotate(Gf.Rotation(Gf.Quatd(float(held_quat[0]), float(held_quat[1]), float(held_quat[2]), float(held_quat[3]))))
+    #     held_mat.SetTranslateOnly(Gf.Vec3d(*[float(x) for x in held_pos]))
+
+    #     fixed_mat = Gf.Matrix4d()
+    #     fixed_mat.SetRotate(Gf.Rotation(Gf.Quatd(float(fixed_quat[0]), float(fixed_quat[1]), float(fixed_quat[2]), float(fixed_quat[3]))))
+    #     fixed_mat.SetTranslateOnly(Gf.Vec3d(*[float(x) for x in fixed_pos]))
+
+
+    #     to_pose = held_mat
+    #     from_pose = fixed_mat
+    #     to_path = held_prim.GetPath()
+    #     from_path = fixed_prim.GetPath()
+
+    #     rel_pose = to_pose * from_pose.GetInverse()
+    #     rel_pose = rel_pose.RemoveScaleShear()
+    #     # pos1 = Gf.Vec3f(rel_pose.ExtractTranslation())
+    #     # rot1 = Gf.Quatf(rel_pose.ExtractRotationQuat())
+
+    #     # rel_mat = self._get_real_mat()
+    #     rel_mat = connection_cfg.pose_to_base
+    #     pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
+    #     rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
+    #     rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
+
+
+    #     # set the velocity of the held and fixed assets to zero before creating the joint
+    #     held_state = self._held_asset.data.default_root_state.clone()
+    #     held_state[:, 7:] = 0.0
+    #     self._held_asset.write_root_velocity_to_sim(held_state[:, 7:])
+    #     self._held_asset.reset()
+    #     fixed_state = self._fixed_asset.data.default_root_state.clone()
+    #     fixed_state[:, 7:] = 0.0
+    #     self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:])
+    #     self._fixed_asset.reset()
+
+
+    #     joint = UsdPhysics.FixedJoint.Define(stage, joint_path)
+    #     joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
+    #     joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
+
+
+    #     joint.CreateLocalPos0Attr().Set(pos1)
+    #     joint.CreateLocalRot0Attr().Set(rot1)
+    #     joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
+    #     joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+
+
+    #     self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
+    #     self.step_sim_no_action()
+
+    def _create_screw_joint(self):
+        """Create a screw joint between the held asset and the fixed asset."""
         from pxr import Usd, UsdPhysics, PhysxSchema, Sdf, Gf
         from omni.physx.scripts import utils
         import omni.usd
         stage = omni.usd.get_context().get_stage()
-        if connection_idx == 1:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
-            joint_path = "/World/envs/env_0/FixedJoint1"
-            connection_cfg = self.cfg_task.connection_cfg1
-        elif connection_idx == 2:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
-            joint_path = "/World/envs/env_0/FixedJoint2"
-            connection_cfg = self.cfg_task.connection_cfg2
-        elif connection_idx == 3:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Rod")
-            joint_path = "/World/envs/env_0/FixedJoint3"
-            connection_cfg = self.cfg_task.connection_cfg3
+        held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
+        joint_path = "/World/envs/env_0/PrismJoint1"
+        connection_cfg = self.cfg_task.connection_cfg4
+
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
         
-
-        # 获取 held/fixed asset 的物理 pose（世界坐标）
-
-        fixed_pos = self.fixed_pos[0].cpu().numpy()
-        fixed_quat = self.fixed_quat[0].cpu().numpy()
-
-        if connection_idx == 1:
-            held_pos = self._plug1.data.root_pos_w - self.scene.env_origins
-            held_pos = held_pos[0].cpu().numpy()
-            held_quat = self._plug1.data.root_quat_w
-            held_quat = held_quat[0].cpu().numpy()
-        elif connection_idx == 2:
-            held_pos = self._plug2.data.root_pos_w - self.scene.env_origins
-            held_pos = held_pos[0].cpu().numpy()
-            held_quat = self._plug2.data.root_quat_w
-            held_quat = held_quat[0].cpu().numpy()
-        elif connection_idx == 3:
-            held_pos = self._rod_asset.data.root_pos_w - self.scene.env_origins
-            held_pos = held_pos[0].cpu().numpy()
-            held_quat = self._rod_asset.data.root_quat_w
-            held_quat = held_quat[0].cpu().numpy()
-
-
-        held_mat = Gf.Matrix4d()
-        held_mat.SetRotate(Gf.Rotation(Gf.Quatd(float(held_quat[0]), float(held_quat[1]), float(held_quat[2]), float(held_quat[3]))))
-        held_mat.SetTranslateOnly(Gf.Vec3d(*[float(x) for x in held_pos]))
-
-        fixed_mat = Gf.Matrix4d()
-        fixed_mat.SetRotate(Gf.Rotation(Gf.Quatd(float(fixed_quat[0]), float(fixed_quat[1]), float(fixed_quat[2]), float(fixed_quat[3]))))
-        fixed_mat.SetTranslateOnly(Gf.Vec3d(*[float(x) for x in fixed_pos]))
-
-
-        to_pose = held_mat
-        from_pose = fixed_mat
         to_path = held_prim.GetPath()
         from_path = fixed_prim.GetPath()
-
-        rel_pose = to_pose * from_pose.GetInverse()
-        rel_pose = rel_pose.RemoveScaleShear()
-        # pos1 = Gf.Vec3f(rel_pose.ExtractTranslation())
-        # rot1 = Gf.Quatf(rel_pose.ExtractRotationQuat())
 
         # rel_mat = self._get_real_mat()
         rel_mat = connection_cfg.pose_to_base
@@ -403,7 +450,7 @@ class FrankaChairEnv(DirectRLEnv):
         rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
         rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
 
-
+        
         # set the velocity of the held and fixed assets to zero before creating the joint
         held_state = self._held_asset.data.default_root_state.clone()
         held_state[:, 7:] = 0.0
@@ -413,9 +460,11 @@ class FrankaChairEnv(DirectRLEnv):
         fixed_state[:, 7:] = 0.0
         self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:])
         self._fixed_asset.reset()
+        self.step_sim_no_action()
 
 
-        joint = UsdPhysics.FixedJoint.Define(stage, joint_path)
+        joint = UsdPhysics.PrismaticJoint.Define(stage, joint_path)
+        joint.CreateAxisAttr("Z")
         joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
         joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
 
@@ -424,11 +473,10 @@ class FrankaChairEnv(DirectRLEnv):
         joint.CreateLocalRot0Attr().Set(rot1)
         joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
         joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
-
+        # PhysxSchema.PhysxJointAPI.Apply(joint.GetPrim()).CreateEnableCollisionAttr().Set(False)
 
         self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
         self.step_sim_no_action()
-
 
 
 
@@ -444,7 +492,8 @@ class FrankaChairEnv(DirectRLEnv):
         print("t_normal:", t_normal)
 
         if not self.fixed_joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.005:
-            self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
+            # self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
+            self._create_screw_joint()
             self.fixed_joint_created = True
             print("Creating fixed joint.")
         elif self.fixed_joint_created :
@@ -832,7 +881,7 @@ class FrankaChairEnv(DirectRLEnv):
                 self.cfg_task.fixed_asset_init_pos_noise, dtype=torch.float32, device=self.device
             )
             fixed_pos_init_rand = fixed_pos_init_rand @ torch.diag(fixed_asset_init_pos_rand)
-            fixed_state[:, 0:3] += fixed_pos_init_rand + self.scene.env_origins[env_ids]
+            fixed_state[:, 0:3] += fixed_pos_init_rand + self.scene.env_origins[env_ids] 
             # (1.b.) Orientation
             fixed_orn_init_yaw = np.deg2rad(self.cfg_task.fixed_asset_init_orn_deg)
             fixed_orn_yaw_range = np.deg2rad(self.cfg_task.fixed_asset_init_orn_range_deg)
@@ -881,6 +930,7 @@ class FrankaChairEnv(DirectRLEnv):
 
                 above_fixed_pos = fixed_tip_pos.clone()
                 above_fixed_pos[:, 2] += self.cfg_task.hand_init_pos[2]
+                above_fixed_pos[:, 1] += 0.2
 
                 rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
                 above_fixed_pos_rand = 2 * (rand_sample - 0.5) + 0.5  # [-1, 1] # [-0.5, 1.5]

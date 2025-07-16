@@ -1,6 +1,5 @@
 $conda activate env_isaaclab
 
-$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Franka-Chair-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
 
 $ python scripts/environments/zero_agent.py --task Isaac-Franka-Chair-Direct-v0 --num_envs 1 --disable_fabric
 
@@ -10,17 +9,6 @@ $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
   --make-instanceable \
   --collision-approximation sdf \
   --mass 1.0
-
-$ ./isaaclab.sh  -p scripts/tools/check_instanceable.py /home/crtie/crtie/Manual2Skill2/chair_real/frame_fromur.usd -n 4096  --physics
-
-$ python scripts/tools/check_usd.py
-
-
-
-$ ./isaaclab.sh -p scripts/tools/convert_urdf.py \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame.urdf \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame_fromur.usd \
-  --root-link-name chair_real_frame
 
 
 #### How to convert mesh to usd and import into isaac lab
@@ -76,3 +64,12 @@ $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
   /home/crtie/crtie/Manual2Skill2/chair_real/rod.usd \
   --collision-approximation sdf \
   --mass 0.1
+
+
+$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Franka-Chair-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
+
+$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Factory-NutThread-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
+
+$ python scripts/reinforcement_learning/rl_games/train.py --task Isaac-Factory-NutThread-Direct-v0 --num_envs 128 --headless
+
+$ python scripts/reinforcement_learning/rl_games/play.py --task Isaac-Factory-NutThread-Direct-v0 --checkpoint logs/rl_games/Factory/test/nn/Factory.pth

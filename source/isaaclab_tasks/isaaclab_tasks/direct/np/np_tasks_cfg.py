@@ -147,7 +147,7 @@ class ChairAssembly(FactoryTask):
     #! crtie: task 1 is "insert the first plug into the first hole",
     #! crtie: task 2 is "insert the second plug into the second hole",
     #! crtie: task 3 is "insert the rod into the frame via the plug",
-    task_idx = 3
+    task_idx = 1
 
 
     name = "chair_assembly"
@@ -266,7 +266,7 @@ class ChairAssembly(FactoryTask):
                 max_contact_impulse=1e32,
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
-            scale = np.array([0.8,0.8,0.8]), 
+            scale = np.array([0.6,0.6,0.6]), 
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
@@ -338,5 +338,19 @@ class ChairAssembly(FactoryTask):
             [0.0, -0.0,  1.0, -2.3246072e-01],
             [ 0.0,  0.0,  0.0,  1.0]]),
         axis_r = None,
+        axis_t = np.array([0.0, 1.0, 0.0]),
+    )
+
+
+    connection_cfg4: ConnectionCfg = ConnectionCfg(
+        connection_type = "screw_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/Plug1",
+        pose_to_base = np.array(
+            [[-0.97, 0.0, 0.0, 0.0182],
+            [0.24, 0.0, 1.0, 0.045],
+            [0.0, 1.0, 0.0, -0.2464],
+            [0.0, 0.0, 0.0, 1.0]]),
+        axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
     )

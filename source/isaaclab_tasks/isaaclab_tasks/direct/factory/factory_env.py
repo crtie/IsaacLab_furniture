@@ -342,7 +342,6 @@ class FactoryEnv(DirectRLEnv):
 
     def _apply_action(self):
         """Apply actions for policy as delta targets from current position."""
-        print("current actions:", self.actions)
         # Get current yaw for success checking.
         _, _, curr_yaw = torch_utils.get_euler_xyz(self.fingertip_midpoint_quat)
         self.curr_yaw = torch.where(curr_yaw > np.deg2rad(235), curr_yaw - 2 * np.pi, curr_yaw)
