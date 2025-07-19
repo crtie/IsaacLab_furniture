@@ -213,7 +213,7 @@ class ChairAssembly(FactoryTask):
                 fix_root_link=True,  # add this so the fixed asset is set to have a fixed base
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass=fixed_asset_cfg.mass),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=0.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3),
         ),
 
         init_state=ArticulationCfg.InitialStateCfg(
@@ -240,11 +240,11 @@ class ChairAssembly(FactoryTask):
                 max_contact_impulse=1e32,
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
-            scale = np.array([0.8,0.8,0.8]), 
+            scale = np.array([0.7,0.7,0.7]), 
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-3, rest_offset=1e-3),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -348,7 +348,7 @@ class ChairAssembly(FactoryTask):
         connector_path = "/World/envs/env_.*/Plug1",
         pose_to_base = np.array(
             [[-0.97, 0.0, 0.0, 0.0182],
-            [0.24, 0.0, 1.0, 0.045],
+            [0.24, 0.0, 1.0, 0.042],
             [0.0, 1.0, 0.0, -0.2464],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),

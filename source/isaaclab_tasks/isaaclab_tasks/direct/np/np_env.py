@@ -444,13 +444,14 @@ class FrankaChairEnv(DirectRLEnv):
         to_path = held_prim.GetPath()
         from_path = fixed_prim.GetPath()
 
+
         # rel_mat = self._get_real_mat()
         rel_mat = connection_cfg.pose_to_base
         pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
         rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
         rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
 
-        
+
         # set the velocity of the held and fixed assets to zero before creating the joint
         held_state = self._held_asset.data.default_root_state.clone()
         held_state[:, 7:] = 0.0
@@ -462,8 +463,8 @@ class FrankaChairEnv(DirectRLEnv):
         self._fixed_asset.reset()
         self.step_sim_no_action()
 
-
         joint = UsdPhysics.PrismaticJoint.Define(stage, joint_path)
+        # joint = UsdPhysics.RevoluteJoint.Define(stage, joint_path)
         joint.CreateAxisAttr("Z")
         joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
         joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
@@ -473,7 +474,8 @@ class FrankaChairEnv(DirectRLEnv):
         joint.CreateLocalRot0Attr().Set(rot1)
         joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
         joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
-        # PhysxSchema.PhysxJointAPI.Apply(joint.GetPrim()).CreateEnableCollisionAttr().Set(False)
+        # joint_prim = joint.GetPrim()
+        # joint_prim.CreateAttribute("physxJoint:enableCollision", Sdf.ValueTypeNames.Bool).Set(False)
 
         self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
         self.step_sim_no_action()
@@ -491,7 +493,7 @@ class FrankaChairEnv(DirectRLEnv):
         print("t_tangent:", t_tangent)
         print("t_normal:", t_normal)
 
-        if not self.fixed_joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.005:
+        if not self.fixed_joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.003:
             # self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
             self._create_screw_joint()
             self.fixed_joint_created = True
