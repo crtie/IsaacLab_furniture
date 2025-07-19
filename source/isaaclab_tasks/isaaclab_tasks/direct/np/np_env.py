@@ -493,7 +493,7 @@ class FrankaChairEnv(DirectRLEnv):
         print("t_tangent:", t_tangent)
         print("t_normal:", t_normal)
 
-        if not self.fixed_joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.003:
+        if not self.fixed_joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.005:
             # self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
             self._create_screw_joint()
             self.fixed_joint_created = True
