@@ -171,7 +171,7 @@ class FrankaChairEnv(DirectRLEnv):
             self._plug1 = RigidObject(self.cfg_task.plug1)
             # self._plug1 = RigidObject(self.cfg_task.screw)
             self._held_asset = self._plug1
-            self._connection_cfg = self.cfg_task.connection_cfg1
+            self._connection_cfg = self.cfg_task.connection_cfg4
 
     
         if self.cfg_task.task_idx ==2:
@@ -463,30 +463,31 @@ class FrankaChairEnv(DirectRLEnv):
         self._fixed_asset.reset()
         self.step_sim_no_action()
 
-        # 1. 创建 prismatic joint
-        # joint_path1 = "/World/envs/env_0/PrismJoint"
-        # prism_joint = UsdPhysics.PrismaticJoint.Define(stage, joint_path1)
-        # prism_joint.CreateAxisAttr("Z")
-        # prism_joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
-        # prism_joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
-        # prism_joint.CreateLocalPos0Attr().Set(pos1)
-        # prism_joint.CreateLocalRot0Attr().Set(rot1)
-        # prism_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
-        # prism_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+        # 创建 D6 Joint，允许 Z 轴旋转和平移
+        joint_path = "/World/envs/env_0/ScrewJoint"
+        d6_joint = UsdPhysics.Joint.Define(stage, joint_path)
+        
+        # 设置 body 关系
+        d6_joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
+        d6_joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
+        
+        # 设置位置和旋转
+        d6_joint.CreateLocalPos0Attr().Set(pos1)
+        d6_joint.CreateLocalRot0Attr().Set(rot1)
+        d6_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
+        d6_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+        prim = d6_joint.GetPrim()
+        for limit_name in ["transX", "transY", "transZ", "rotX", "rotY"]:
+            limit_api = UsdPhysics.LimitAPI.Apply(prim, limit_name)
+            limit_api.CreateLowAttr(0.0)
+            limit_api.CreateHighAttr(0.0)
 
-        # 2. 创建 revolute joint
-        joint_path2 = "/World/envs/env_0/RevoJoint"
-        revo_joint = UsdPhysics.RevoluteJoint.Define(stage, joint_path2)
-        revo_joint.CreateAxisAttr("Z")
-        revo_joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
-        revo_joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
-        revo_joint.CreateLocalPos0Attr().Set(pos1)
-        revo_joint.CreateLocalRot0Attr().Set(rot1)
-        revo_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
-        revo_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
-
-        # 保存 joint prim，便于后续管理
-        self.fixed_joint_prim = stage.GetPrimAtPath(joint_path2)
+        for limit_name in ["rotZ"]:
+            limit_api = UsdPhysics.LimitAPI.Apply(prim, limit_name)
+            limit_api.CreateLowAttr(-1.0)
+            limit_api.CreateHighAttr(1.0)
+        # 保存 joint prim
+        self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
         for i in range(3):
             self.step_sim_no_action()
 
@@ -497,17 +498,21 @@ class FrankaChairEnv(DirectRLEnv):
         gt_real_mat = self._connection_cfg.pose_to_base
 
         R_dist, R_axis, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
-        # print("rel_mat:", rel_mat)
+        print("rel_mat:", rel_mat)
         # print("gt_real_mat:", gt_real_mat)
         # bp()
-        # print("R_dist:", R_dist)
-        # print("t_tangent:", t_tangent)
-        # print("t_normal:", t_normal)
+        print("R_dist:", R_dist)
+        print("t_tangent:", t_tangent)
+        print("t_normal:", t_normal)
         # print("joint names of frame:",self._fixed_asset.joint_names)
         if not self.joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.005:
-            self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
-            # self._create_screw_joint()
+            # self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
+            self._create_screw_joint()
             self.joint_created = True
+            rel_mat = self._get_real_mat()
+            gt_real_mat = self._connection_cfg.pose_to_base
+            R_dist, R_axis, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
+            self.R_axis = R_axis 
             print("Creating fixed joint.")
 
 
@@ -528,30 +533,22 @@ class FrankaChairEnv(DirectRLEnv):
         # 5. 根据螺距 pitch 计算z方向的位移
         pitch = getattr(self._connection_cfg, "pitch", 0.5)  # 螺距，单位：米/弧度
         dz = float(delta_theta * pitch)  # 螺旋升降量
-
         print("dz:", dz)
+        if dz >0.15:
+            print("triggering joint limit")
+            prim = self.fixed_joint_prim
+            limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
+            limit_api.CreateLowAttr(-1.0)
+            limit_api.CreateHighAttr(1.0)
 
-        original_collision_enabled = self._fixed_asset.root_physx_view.get_collision_enabled()
-        
 
-        # 6. 更新held asset的z坐标
-        # 获取当前held asset的世界坐标
-        held_state = self._held_asset.data.root_pose_w.clone()
-        print("held_state:", held_state)
-        # 只更新z轴
-        held_state[:, 2] += dz
-        # 保持其他坐标不变
-        self._held_asset.write_root_pose_to_sim(held_state[:, 0:7])
-        self._held_asset.reset()
-
-        self.R_axis = R_axis  # 更新旋转轴
 
 
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
         self._check_attach_condition()
-        # if self.joint_created:
-            # self._sync_held_asset()
+        if self.joint_created:
+            self._sync_held_asset()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
