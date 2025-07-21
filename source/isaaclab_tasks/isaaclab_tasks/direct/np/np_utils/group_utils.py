@@ -76,12 +76,14 @@ def SE3dist(Rgts, Rps, connection_cfg=None):
     # Compute rotation distance
     if axis_r is None:
         R_dist = bgdR(Rgt, Rp)
+        R_axis = R_dist
     else:
         R_rel = np.array(torch.bmm(Rgt.permute(0, 2, 1), Rp))
         r = R.from_matrix(R_rel).as_rotvec()
         axis_r = axis_r / np.linalg.norm(axis_r)
         r_proj = r - np.dot(r, axis_r) * axis_r
         R_dist = np.linalg.norm(r_proj)
+        R_axis = np.dot(r, axis_r)
 
     if axis_t is None:
         # when axis is None, we consider the full translation distance, where the tangential is equal to normal distance
@@ -92,4 +94,4 @@ def SE3dist(Rgts, Rps, connection_cfg=None):
         t_tangential = np.linalg.norm(t_diff * axis_t)
         t_normal = np.linalg.norm(t_diff - t_tangential * axis_t)
 
-    return R_dist, t_tangential, t_normal
+    return R_dist, R_axis, t_tangential, t_normal

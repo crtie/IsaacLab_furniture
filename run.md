@@ -73,3 +73,14 @@ $ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Is
 $ python scripts/reinforcement_learning/rl_games/train.py --task Isaac-Factory-NutThread-Direct-v0 --num_envs 128 --headless
 
 $ python scripts/reinforcement_learning/rl_games/play.py --task Isaac-Factory-NutThread-Direct-v0 --checkpoint logs/rl_games/Factory/test/nn/Factory.pth
+
+TODO:
+1. integrate the created joints into original articulation class
+2. 把那个齿轮和齿条关节应用到plug自己上面?
+
+
+./isaaclab.sh -p scripts/tools/convert_mesh.py \
+  /home/crtie/crtie/Manual2Skill2/chair_real/screw.obj \
+  /home/crtie/crtie/Manual2Skill2/chair_real/screw.usd \
+  --collision-approximation sdf \
+  --mass 0.01

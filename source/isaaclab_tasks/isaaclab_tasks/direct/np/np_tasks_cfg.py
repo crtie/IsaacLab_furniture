@@ -130,6 +130,13 @@ class Plug(HeldAssetCfg):
     mass = 0.001  # Mass is set to 0.001 to avoid large forces during insertion.
 
 @configclass
+class Screw(HeldAssetCfg):
+    usd_path = f"{CHAIR_ASSET_DIR}/screw3.usd"
+    diameter = 0.007986
+    height = 0.01
+    mass = 0.001  # Mass is set to 0.001 to avoid large forces during insertion.
+
+@configclass
 class backrest_asset_config():
     usd_path = f"{CHAIR_ASSET_DIR}/backrest2.usd"
     mass = 0.1
@@ -155,6 +162,7 @@ class ChairAssembly(FactoryTask):
     fixed_asset_cfg = ChairFrame()
     # held_asset_cfg = Peg8mm()
     held_asset_cfg = Plug()
+    # held_asset_cfg = Screw()
     backrest_asset_cfg = backrest_asset_config()
     rod_asset_cfg = rod_asset_config()
     asset_size = 8.0
@@ -267,6 +275,32 @@ class ChairAssembly(FactoryTask):
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
             scale = np.array([0.6,0.6,0.6]), 
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                articulation_enabled=False,  # Set to False for RigidObject
+            ),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-3, rest_offset=1e-3),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
+    )
+
+    screw: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Plug1",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=held_asset_cfg.usd_path,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                max_depenetration_velocity=5.0,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_linear_velocity=1000.0,
+                max_angular_velocity=3666.0,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=192,
+                solver_velocity_iteration_count=1, 
+                max_contact_impulse=1e32,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
+            scale = np.array([0.4,0.4,0.5]), 
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
