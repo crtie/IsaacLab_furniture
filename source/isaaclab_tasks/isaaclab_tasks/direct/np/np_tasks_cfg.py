@@ -10,7 +10,7 @@ from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 import numpy as np
 
 ASSET_DIR = f"{ISAACLAB_NUCLEUS_DIR}/Factory"
-CHAIR_ASSET_DIR = "/home/crtie/crtie/Manual2Skill2/chair_real"
+CHAIR_ASSET_DIR = "source/isaaclab_tasks/isaaclab_tasks/direct/np/asset"
 
 @configclass
 class FixedAssetCfg:
@@ -155,15 +155,19 @@ class ChairAssembly(FactoryTask):
     #! crtie: task 1 is "insert the first plug into the first hole",
     #! crtie: task 2 is "insert the second plug into the second hole",
     #! crtie: task 3 is "insert the rod into the frame via the plug",
-    task_idx = 1
+    #! crtie: task 4 is "rotate the screw into the frame ".
+    task_idx = 4
 
 
     name = "chair_assembly"
     # fixed_asset_cfg = Hole8mm()
     fixed_asset_cfg = ChairFrame()
     # held_asset_cfg = Peg8mm()
-    # held_asset_cfg = Plug()
-    held_asset_cfg = Screw()
+
+    if task_idx == 4:
+        held_asset_cfg = Screw()
+    else:
+        held_asset_cfg = Plug()
     backrest_asset_cfg = backrest_asset_config()
     rod_asset_cfg = rod_asset_config()
     asset_size = 8.0
@@ -173,7 +177,7 @@ class ChairAssembly(FactoryTask):
     hand_init_pos: list = [0.0, 0.0, 0.06]  # Relative to fixed asset tip.
     hand_init_pos_noise: list = [0.02, 0.02, 0.01]
 
-    if task_idx == 1 or task_idx == 2:
+    if task_idx == 1 or task_idx == 2 or task_idx == 4:
         # For the first two tasks, the hand is oriented towards the fixed asset.
         hand_init_orn: list = [3.1416, 0.0, 0.0]
         hand_init_orn_noise: list = [0.0, 0.0, 0.785]

@@ -2,6 +2,8 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
+import sys, os
+sys.path.append(os.path.abspath(__file__))
 
 import numpy as np
 import torch
@@ -157,7 +159,7 @@ class FrankaChairEnv(DirectRLEnv):
         spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg(), translation=(0.0, 0.0, -0.0))
 
         # spawn a usd file of a table into the scene
-        cfg = sim_utils.UsdFileCfg(usd_path=f"/home/crtie/crtie/Manual2Skill2/LLM_TAMP/Assets/Scene/workdesk.usd")
+        cfg = sim_utils.UsdFileCfg(usd_path=f"source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/workdesk.usd")
         cfg.scale = np.array([1.0, 0.7, 1.0])
         cfg.mass_props = sim_utils.MassPropertiesCfg(mass=1e7),
         cfg.func(
@@ -168,10 +170,9 @@ class FrankaChairEnv(DirectRLEnv):
 
 
         if self.cfg_task.task_idx == 1:
-            # self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._plug1 = RigidObject(self.cfg_task.screw)
+            self._plug1 = RigidObject(self.cfg_task.plug1)
             self._held_asset = self._plug1
-            self._connection_cfg = self.cfg_task.connection_cfg5
+            self._connection_cfg = self.cfg_task.connection_cfg1
 
     
         if self.cfg_task.task_idx ==2:
@@ -186,7 +187,11 @@ class FrankaChairEnv(DirectRLEnv):
             self._rod_asset = RigidObject(self.cfg_task.rod_asset)
             self._held_asset = self._rod_asset
             self._connection_cfg = self.cfg_task.connection_cfg3
-
+            
+        if self.cfg_task.task_idx == 4:
+            self._plug1 = RigidObject(self.cfg_task.screw)
+            self._held_asset = self._plug1
+            self._connection_cfg = self.cfg_task.connection_cfg5
         # self._backrest_asset = RigidObject(self.cfg_task.backrest_asset)
         # self._rod_asset = RigidObject(self.cfg_task.rod_asset)
         
@@ -506,15 +511,16 @@ class FrankaChairEnv(DirectRLEnv):
         print("t_normal:", t_normal)
         # print("joint names of frame:",self._fixed_asset.joint_names)
         if not self.joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.005:
-            # self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
-            self._create_screw_joint()
+            if self.cfg_task.task_idx == 4:
+                self._create_screw_joint()
+            else:
+                self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
             self.joint_created = True
             rel_mat = self._get_real_mat()
             gt_real_mat = self._connection_cfg.pose_to_base
             R_dist, R_axis, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
             self.R_axis = R_axis 
             print("Creating fixed joint.")
-
 
 
         elif self.joint_created :
@@ -553,7 +559,7 @@ class FrankaChairEnv(DirectRLEnv):
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
         self._check_attach_condition()
-        if self.joint_created:
+        if self.joint_created and self.cfg_task.task_idx == 4:
             self._sync_held_asset()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
@@ -873,7 +879,7 @@ class FrankaChairEnv(DirectRLEnv):
 
     def get_handheld_asset_relative_pose(self):
         """Get default relative pose between help asset and fingertip."""
-        if self.cfg_task.name == "chair_assembly" and (self.cfg_task.task_idx == 1 or self.cfg_task.task_idx == 2):
+        if self.cfg_task.name == "chair_assembly" and (self.cfg_task.task_idx == 1 or self.cfg_task.task_idx == 2 or self.cfg_task.task_idx == 4):
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
             held_asset_relative_pos[:, 2] = self.cfg_task.held_asset_cfg.height
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
@@ -918,7 +924,7 @@ class FrankaChairEnv(DirectRLEnv):
         """Randomize initial state and perform any episode-level randomization."""
 
         # insert the first plug into the frame
-        if self.cfg_task.task_idx ==1 or self.cfg_task.task_idx == 2: 
+        if self.cfg_task.task_idx ==1 or self.cfg_task.task_idx == 2 or self.cfg_task.task_idx == 4: 
             # Disable gravity.
             physics_sim_view = sim_utils.SimulationContext.instance().physics_sim_view
             physics_sim_view.set_gravity(carb.Float3(0.0, 0.0, 0.0))
