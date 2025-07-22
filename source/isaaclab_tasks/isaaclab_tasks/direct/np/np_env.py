@@ -168,10 +168,10 @@ class FrankaChairEnv(DirectRLEnv):
 
 
         if self.cfg_task.task_idx == 1:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            # self._plug1 = RigidObject(self.cfg_task.screw)
+            # self._plug1 = RigidObject(self.cfg_task.plug1)
+            self._plug1 = RigidObject(self.cfg_task.screw)
             self._held_asset = self._plug1
-            self._connection_cfg = self.cfg_task.connection_cfg4
+            self._connection_cfg = self.cfg_task.connection_cfg5
 
     
         if self.cfg_task.task_idx ==2:
@@ -441,7 +441,7 @@ class FrankaChairEnv(DirectRLEnv):
         stage = omni.usd.get_context().get_stage()
         held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
-        connection_cfg = self.cfg_task.connection_cfg4
+        connection_cfg = self._connection_cfg
 
         to_path = held_prim.GetPath()
         from_path = fixed_prim.GetPath()
@@ -484,8 +484,8 @@ class FrankaChairEnv(DirectRLEnv):
 
         for limit_name in ["rotZ"]:
             limit_api = UsdPhysics.LimitAPI.Apply(prim, limit_name)
-            limit_api.CreateLowAttr(-1.0)
-            limit_api.CreateHighAttr(1.0)
+            limit_api.CreateLowAttr(-3.14)
+            limit_api.CreateHighAttr(3.14)  
         # 保存 joint prim
         self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
         for i in range(3):
@@ -534,12 +534,18 @@ class FrankaChairEnv(DirectRLEnv):
         pitch = getattr(self._connection_cfg, "pitch", 0.5)  # 螺距，单位：米/弧度
         dz = float(delta_theta * pitch)  # 螺旋升降量
         print("dz:", dz)
-        if dz >0.15:
-            print("triggering joint limit")
+        if abs(dz) >0.1:
+            print("triggering joint limit1")
             prim = self.fixed_joint_prim
             limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
-            limit_api.CreateLowAttr(-1.0)
-            limit_api.CreateHighAttr(1.0)
+            limit_api.CreateLowAttr(-0.005)
+            limit_api.CreateHighAttr(0.005)
+        if abs(dz) > 0.15:
+            print("triggering joint limit2")
+            prim = self.fixed_joint_prim
+            limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
+            limit_api.CreateLowAttr(-0.01)
+            limit_api.CreateHighAttr(0.01)
 
 
 

@@ -162,8 +162,8 @@ class ChairAssembly(FactoryTask):
     # fixed_asset_cfg = Hole8mm()
     fixed_asset_cfg = ChairFrame()
     # held_asset_cfg = Peg8mm()
-    held_asset_cfg = Plug()
-    # held_asset_cfg = Screw()
+    # held_asset_cfg = Plug()
+    held_asset_cfg = Screw()
     backrest_asset_cfg = backrest_asset_config()
     rod_asset_cfg = rod_asset_config()
     asset_size = 8.0
@@ -301,7 +301,7 @@ class ChairAssembly(FactoryTask):
                 max_contact_impulse=1e32,
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
-            scale = np.array([0.85,0.85,0.85]), 
+            scale = np.array([0.7,0.7,0.7]), 
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
@@ -389,4 +389,18 @@ class ChairAssembly(FactoryTask):
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
     )
+
+    connection_cfg5: ConnectionCfg = ConnectionCfg(
+        connection_type = "screw_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/Plug1",
+        pose_to_base = np.array(
+            [[-0.97,  0.0,  0.0,  0.0188],
+            [0.24,  0.0,  1.0,  0.06],
+            [0.0,  1.0, 0.0, -0.2484],
+            [0.0, 0.0, 0.0, 1.0]]),
+        axis_r = np.array([0.0, 1.0, 0.0]),
+        axis_t = np.array([0.0, 1.0, 0.0]),
+    )
+
 
