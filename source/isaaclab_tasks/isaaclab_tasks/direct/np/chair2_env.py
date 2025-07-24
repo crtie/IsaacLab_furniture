@@ -1188,7 +1188,8 @@ class FrankaChair2Env(DirectRLEnv):
                 n_bad = bad_envs.shape[0]
 
                 above_rod_pos = rod_tip_pos.clone()
-                # above_rod_pos[:, 2] += self.cfg_task.hand_init_pos[2]
+                above_rod_pos[:, 0] += 0.1
+                above_rod_pos[:, 1] -= 0.25
 
                 rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
                 above_rod_pos_rand = 0.01 * (rand_sample - 0.5) 
