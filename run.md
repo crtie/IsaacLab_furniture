@@ -76,8 +76,6 @@ $ python scripts/reinforcement_learning/rl_games/play.py --task Isaac-Factory-Nu
 
 TODO:
 1. integrate the created joints into original articulation class
-2. 把那个齿轮和齿条关节应用到plug自己上面?
-
 
 ./isaaclab.sh -p scripts/tools/convert_mesh.py \
   /home/crtie/crtie/Manual2Skill2/chair_real/screw_ree.obj \
@@ -90,3 +88,10 @@ TODO:
   /home/crtie/crtie/Manual2Skill2/chair_real/frame_re.usd \
   --collision-approximation sdf \
   --mass 1.0
+
+
+./isaaclab.sh -p scripts/tools/convert_mesh.py \
+  /home/crtie/crtie/Manual2Skill2/chair_real/rod.obj \
+  /home/crtie/crtie/Manual2Skill2/chair_real/rod_ar.usd \
+  --collision-approximation sdf \
+  --mass 0.05

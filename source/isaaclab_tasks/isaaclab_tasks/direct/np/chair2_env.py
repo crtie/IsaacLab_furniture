@@ -19,8 +19,8 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import axis_angle_from_quat
 
 from . import factory_control as fc
-from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChairCfg
-from .np_tasks_cfg import ChairAssembly, ConnectionCfg
+from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChair2Cfg
+from .np_tasks_cfg import ChairAssembly1, ConnectionCfg
 from pdb import set_trace as bp
 from .np_utils.group_utils import SE3dist
 from scipy.spatial.transform import Rotation as R
@@ -29,10 +29,10 @@ from pxr import Usd, UsdPhysics, PhysxSchema, Sdf, Gf, Tf
 from omni.physx.scripts import utils
 import omni.usd
 
-class FrankaChairEnv(DirectRLEnv):
-    cfg: FrankaChairCfg
+class FrankaChair2Env(DirectRLEnv):
+    cfg: FrankaChair2Cfg
 
-    def __init__(self, cfg: FrankaChairCfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: FrankaChair2Cfg, render_mode: str | None = None, **kwargs):
         # Update number of obs/states
         cfg.observation_space = sum([OBS_DIM_CFG[obs] for obs in cfg.obs_order])
         cfg.state_space = sum([STATE_DIM_CFG[state] for state in cfg.state_order])
