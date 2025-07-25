@@ -184,7 +184,7 @@ class FrankaChair2Env(DirectRLEnv):
         if self.cfg_task.task_idx == 3:
             self._plug1 = RigidObject(self.cfg_task.plug1)
             self._plug2 = RigidObject(self.cfg_task.plug2)
-            self._rod_asset = RigidObject(self.cfg_task.rod_asset)
+            self._rod_asset = RigidObject(self.cfg_task.rod)
             self._held_asset = self._rod_asset
             self._connection_cfg = self.cfg_task.connection_cfg3
             
@@ -193,7 +193,6 @@ class FrankaChair2Env(DirectRLEnv):
             self._held_asset = self._plug1
             self._connection_cfg = self.cfg_task.connection_cfg5
         # self._backrest_asset = RigidObject(self.cfg_task.backrest_asset)
-        # self._rod_asset = RigidObject(self.cfg_task.rod_asset)
         
 
         self.scene.clone_environments(copy_from_source=False)
@@ -366,67 +365,18 @@ class FrankaChair2Env(DirectRLEnv):
             held_prim = stage.GetPrimAtPath("/World/envs/env_0/Rod")
             joint_path = "/World/envs/env_0/FixedJoint3"
             connection_cfg = self.cfg_task.connection_cfg3
+
+
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
         
 
-        # 获取 held/fixed asset 的物理 pose（世界坐标）
-
-        fixed_pos = self.fixed_pos[0].cpu().numpy()
-        fixed_quat = self.fixed_quat[0].cpu().numpy()
-
-        if connection_idx == 1:
-            held_pos = self._plug1.data.root_pos_w - self.scene.env_origins
-            held_pos = held_pos[0].cpu().numpy()
-            held_quat = self._plug1.data.root_quat_w
-            held_quat = held_quat[0].cpu().numpy()
-        elif connection_idx == 2:
-            held_pos = self._plug2.data.root_pos_w - self.scene.env_origins
-            held_pos = held_pos[0].cpu().numpy()
-            held_quat = self._plug2.data.root_quat_w
-            held_quat = held_quat[0].cpu().numpy()
-        elif connection_idx == 3:
-            held_pos = self._rod_asset.data.root_pos_w - self.scene.env_origins
-            held_pos = held_pos[0].cpu().numpy()
-            held_quat = self._rod_asset.data.root_quat_w
-            held_quat = held_quat[0].cpu().numpy()
-
-
-        held_mat = Gf.Matrix4d()
-        held_mat.SetRotate(Gf.Rotation(Gf.Quatd(float(held_quat[0]), float(held_quat[1]), float(held_quat[2]), float(held_quat[3]))))
-        held_mat.SetTranslateOnly(Gf.Vec3d(*[float(x) for x in held_pos]))
-
-        fixed_mat = Gf.Matrix4d()
-        fixed_mat.SetRotate(Gf.Rotation(Gf.Quatd(float(fixed_quat[0]), float(fixed_quat[1]), float(fixed_quat[2]), float(fixed_quat[3]))))
-        fixed_mat.SetTranslateOnly(Gf.Vec3d(*[float(x) for x in fixed_pos]))
-
-
-        to_pose = held_mat
-        from_pose = fixed_mat
         to_path = held_prim.GetPath()
         from_path = fixed_prim.GetPath()
 
-        rel_pose = to_pose * from_pose.GetInverse()
-        rel_pose = rel_pose.RemoveScaleShear()
-        # pos1 = Gf.Vec3f(rel_pose.ExtractTranslation())
-        # rot1 = Gf.Quatf(rel_pose.ExtractRotationQuat())
-
-        # rel_mat = self._get_real_mat()
         rel_mat = connection_cfg.pose_to_base
         pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
         rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
         rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
-
-
-        # set the velocity of the held and fixed assets to zero before creating the joint
-        held_state = self._held_asset.data.default_root_state.clone()
-        held_state[:, 7:] = 0.0
-        self._held_asset.write_root_velocity_to_sim(held_state[:, 7:])
-        self._held_asset.reset()
-        fixed_state = self._fixed_asset.data.default_root_state.clone()
-        fixed_state[:, 7:] = 0.0
-        self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:])
-        self._fixed_asset.reset()
-
 
         joint = UsdPhysics.FixedJoint.Define(stage, joint_path)
         joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
@@ -441,62 +391,6 @@ class FrankaChair2Env(DirectRLEnv):
 
         self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
         self.step_sim_no_action()
-
-    def _create_screw_joint(self):
-        stage = omni.usd.get_context().get_stage()
-        held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
-        fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
-        connection_cfg = self._connection_cfg
-
-        to_path = held_prim.GetPath()
-        from_path = fixed_prim.GetPath()
-
-        # 计算关节的相对位姿
-        rel_mat = connection_cfg.pose_to_base
-        pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
-        rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
-        rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
-
-        # 归零 held 和 fixed asset 的速度
-        held_state = self._held_asset.data.default_root_state.clone()
-        held_state[:, 7:] = 0.0
-        self._held_asset.write_root_velocity_to_sim(held_state[:, 7:])
-        self._held_asset.reset()
-        fixed_state = self._fixed_asset.data.default_root_state.clone()
-        fixed_state[:, 7:] = 0.0
-        self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:])
-        self._fixed_asset.reset()
-        self.step_sim_no_action()
-
-        # 创建 D6 Joint，允许 Z 轴旋转和平移
-        joint_path = "/World/envs/env_0/ScrewJoint"
-        d6_joint = UsdPhysics.Joint.Define(stage, joint_path)
-        
-        # 设置 body 关系
-        d6_joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
-        d6_joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
-        
-        # 设置位置和旋转
-        d6_joint.CreateLocalPos0Attr().Set(pos1)
-        d6_joint.CreateLocalRot0Attr().Set(rot1)
-        d6_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
-        d6_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
-        prim = d6_joint.GetPrim()
-        for limit_name in ["transX", "transY", "transZ", "rotX", "rotY"]:
-            limit_api = UsdPhysics.LimitAPI.Apply(prim, limit_name)
-            limit_api.CreateLowAttr(0.0)
-            limit_api.CreateHighAttr(0.0)
-
-        for limit_name in ["rotZ"]:
-            limit_api = UsdPhysics.LimitAPI.Apply(prim, limit_name)
-            limit_api.CreateLowAttr(-3.14)
-            limit_api.CreateHighAttr(3.14)  
-        # 保存 joint prim
-        self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
-        for i in range(3):
-            self.step_sim_no_action()
-
-
 
     def _check_attach_condition(self):
         rel_mat = self._get_real_mat()
@@ -833,13 +727,6 @@ class FrankaChair2Env(DirectRLEnv):
         self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:], env_ids=env_ids)
         self._fixed_asset.reset()
 
-        # rod_state = self._rod_asset.data.default_root_state.clone()[env_ids]
-        # rod_state[:, 0:3] += self.scene.env_origins[env_ids]
-        # rod_state[:, 7:] = 0.0
-        # self._rod_asset.write_root_pose_to_sim(rod_state[:, 0:7], env_ids=env_ids)
-        # self._rod_asset.write_root_velocity_to_sim(rod_state[:, 7:], env_ids=env_ids)
-        # self._rod_asset.reset()   
-
     def set_pos_inverse_kinematics(self, env_ids):
         """Set robot joint position using DLS IK."""
         ik_time = 0.0
@@ -1169,7 +1056,6 @@ class FrankaChair2Env(DirectRLEnv):
             # Compute the frame on the bolt that would be used as observation: fixed_pos_obs_frame
             # For example, the tip of the bolt can be used as the observation frame
             rod_tip_pos_local = torch.zeros_like(self.held_pos)
-            # rod_tip_pos_local[:, 2] += self.cfg_task.rod_asset_cfg.height
             rod_tip_pos_local[:, 2] += self.cfg_task.rod_asset_cfg.base_height
             rod_tip_quat_local = (
             torch.tensor([1.0, 0.0, 1.0, 0.0], device=self.device).unsqueeze(0).repeat(self.num_envs, 1))
