@@ -127,7 +127,7 @@ class backrest_asset_config():
 
 @configclass
 class rod_asset_config(HeldAssetCfg):
-    usd_path = f"{CHAIR_ASSET_DIR}/rodrrr.usd"
+    usd_path = f"{CHAIR_ASSET_DIR}/rod.usd"
     mass = 0.05
     height = -0.02
     base_height = 0.25

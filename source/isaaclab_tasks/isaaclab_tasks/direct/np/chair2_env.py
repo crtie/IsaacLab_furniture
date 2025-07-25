@@ -182,8 +182,8 @@ class FrankaChair2Env(DirectRLEnv):
             self._connection_cfg = self.cfg_task.connection_cfg2
         
         if self.cfg_task.task_idx == 3:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._plug2 = RigidObject(self.cfg_task.plug2)
+            # self._plug1 = RigidObject(self.cfg_task.plug1)
+            # self._plug2 = RigidObject(self.cfg_task.plug2)
             self._rod_asset = RigidObject(self.cfg_task.rod)
             self._held_asset = self._rod_asset
             self._connection_cfg = self.cfg_task.connection_cfg3
@@ -1124,39 +1124,39 @@ class FrankaChair2Env(DirectRLEnv):
             fixed_pos = self.fixed_pos[0]
             fixed_quat = self.fixed_quat[0]
 
-            rel1_SE3 = self.cfg_task.connection_cfg1.pose_to_base
-            r = R.from_matrix(rel1_SE3[:3, :3])
-            quat_xyzw = r.as_quat()
-            quat_wxyz = torch.tensor([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], device=self.device, dtype=torch.float32)
-            rel_t = torch.tensor(rel1_SE3[:3, 3], device=self.device, dtype=torch.float32)
-            translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
-                q1=fixed_quat, t1=fixed_pos, q2=quat_wxyz, t2=rel_t
-            )
-            plug1_state = self._plug1.data.default_root_state.clone()
-            plug1_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
-            plug1_state[:, 3:7] = translated_held_asset_quat
-            plug1_state[:, 7:] = 0.0
-            self._plug1.write_root_pose_to_sim(plug1_state[:, 0:7])
-            self._plug1.write_root_velocity_to_sim(plug1_state[:, 7:])
-            self._plug1.reset()
-            self._create_fixed_joint(connection_idx=1)
+            # rel1_SE3 = self.cfg_task.connection_cfg1.pose_to_base
+            # r = R.from_matrix(rel1_SE3[:3, :3])
+            # quat_xyzw = r.as_quat()
+            # quat_wxyz = torch.tensor([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], device=self.device, dtype=torch.float32)
+            # rel_t = torch.tensor(rel1_SE3[:3, 3], device=self.device, dtype=torch.float32)
+            # translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
+            #     q1=fixed_quat, t1=fixed_pos, q2=quat_wxyz, t2=rel_t
+            # )
+            # plug1_state = self._plug1.data.default_root_state.clone()
+            # plug1_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
+            # plug1_state[:, 3:7] = translated_held_asset_quat
+            # plug1_state[:, 7:] = 0.0
+            # self._plug1.write_root_pose_to_sim(plug1_state[:, 0:7])
+            # self._plug1.write_root_velocity_to_sim(plug1_state[:, 7:])
+            # self._plug1.reset()
+            # self._create_fixed_joint(connection_idx=1)
 
-            rel2_SE3 = self.cfg_task.connection_cfg2.pose_to_base
-            r = R.from_matrix(rel2_SE3[:3, :3])
-            quat_xyzw = r.as_quat()
-            quat_wxyz = torch.tensor([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], device=self.device, dtype=torch.float32)
-            rel_t = torch.tensor(rel2_SE3[:3, 3], device=self.device, dtype=torch.float32)
-            translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
-                q1=fixed_quat, t1=fixed_pos, q2=quat_wxyz, t2=rel_t
-            )
-            held_state = self._plug2.data.default_root_state.clone()
-            held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
-            held_state[:, 3:7] = translated_held_asset_quat
-            held_state[:, 7:] = 0.0
-            self._plug2.write_root_pose_to_sim(held_state[:, 0:7])
-            self._plug2.write_root_velocity_to_sim(held_state[:, 7:])
-            self._plug2.reset()
-            self._create_fixed_joint(connection_idx=2)
+            # rel2_SE3 = self.cfg_task.connection_cfg2.pose_to_base
+            # r = R.from_matrix(rel2_SE3[:3, :3])
+            # quat_xyzw = r.as_quat()
+            # quat_wxyz = torch.tensor([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], device=self.device, dtype=torch.float32)
+            # rel_t = torch.tensor(rel2_SE3[:3, 3], device=self.device, dtype=torch.float32)
+            # translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
+            #     q1=fixed_quat, t1=fixed_pos, q2=quat_wxyz, t2=rel_t
+            # )
+            # held_state = self._plug2.data.default_root_state.clone()
+            # held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
+            # held_state[:, 3:7] = translated_held_asset_quat
+            # held_state[:, 7:] = 0.0
+            # self._plug2.write_root_pose_to_sim(held_state[:, 0:7])
+            # self._plug2.write_root_velocity_to_sim(held_state[:, 7:])
+            # self._plug2.reset()
+            # self._create_fixed_joint(connection_idx=2)
 
 
 

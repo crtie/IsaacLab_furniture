@@ -92,6 +92,6 @@ TODO:
 
 ./isaaclab.sh -p scripts/tools/convert_mesh.py \
   /home/crtie/crtie/Manual2Skill2/chair_real/rod.obj \
-  /home/crtie/crtie/Manual2Skill2/chair_real/rod_arr.usd \
+  /home/crtie/crtie/Manual2Skill2/chair_real/rod.usd \
   --collision-approximation sdf \
   --mass 0.01
