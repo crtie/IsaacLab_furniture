@@ -127,9 +127,10 @@ class backrest_asset_config():
 
 @configclass
 class rod_asset_config(HeldAssetCfg):
-    usd_path = f"{CHAIR_ASSET_DIR}/rod.usd"
+    # usd_path = f"{CHAIR_ASSET_DIR}/rod.usd"
+    usd_path = "/home/crtie/crtie/Manual2Skill2/chair_real/rod5.usd"
     mass = 0.05
-    height = -0.02
+    height = -0.04
     base_height = 0.25
 
 @configclass
@@ -429,6 +430,7 @@ class ChairAssembly2(FactoryTask):
         hand_init_orn: list = [3.1416, 0.0, 0.0]
         hand_init_orn_noise: list = [0.0, 0.0, 0.785]
     elif task_idx == 3:
+        hand_init_pos: list = [0.0, 0.0, 0.12]  # Relative to fixed asset tip.
         hand_init_orn: list = [3.1416, 0.0, 1.5708]  # For the rod insertion task, the hand is oriented towards the rod.
         hand_init_orn_noise: list = [0.0, 0.0, 0.0]
 
@@ -530,7 +532,7 @@ class ChairAssembly2(FactoryTask):
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-3, rest_offset=1e-3),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -556,10 +558,11 @@ class ChairAssembly2(FactoryTask):
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=1e-4),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.01, 0.09, 0.97), rot=(0.5, -0.5, 0.5, 0.5)),
     )
+
 
 
     connection_cfg1: ConnectionCfg = ConnectionCfg(
@@ -593,10 +596,10 @@ class ChairAssembly2(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Rod",
         pose_to_base = np.array(
-            [[0.0, -1.0, 0.0,  2.6167583e-01],
-            [ 1.0, 0.0,  0.0,  2.2905248e-01],
-            [0.0, -0.0,  1.0, -2.2930223e-01],
+            [[0.0, -1.0, 0.0,  2.8157920e-01],
+            [ -1.0, 0.0,  0.0,  2.2909781e-01],
+            [0.0, -0.0,  -1.0, -2.7506271e-01],
             [ 0.0,  0.0,  0.0,  1.0]]),
-        axis_r = None,
+        axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
     )

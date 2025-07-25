@@ -199,5 +199,5 @@ class FrankaChair1Cfg(FactoryEnvCfg):
 class FrankaChair2Cfg(FactoryEnvCfg):
     task_name = "chair_assembly2"
     task = ChairAssembly2()
-    episode_length_s = 30.0
+    episode_length_s = 3.0
 
