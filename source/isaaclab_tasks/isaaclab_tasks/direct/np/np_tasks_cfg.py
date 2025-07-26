@@ -810,3 +810,16 @@ class ChairAssembly3(FactoryTask):
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
     )
+
+    connection_cfg5: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/Plug1",
+        pose_to_base = np.array(
+            [[-0.97, 0.0, 0.0, 0.01824],
+            [0.24, 0.0, 1.0, 0.0373803],
+            [0.0, 1.0, 0.0, -0.45],
+            [0.0, 0.0, 0.0, 1.0]]),
+        axis_r = np.array([0.0, 1.0, 0.0]),
+        axis_t = np.array([0.0, 1.0, 0.0]),
+    )

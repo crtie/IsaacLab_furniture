@@ -96,3 +96,10 @@ TODO:
   --make-instanceable \
   --collision-approximation sdf \
   --mass 0.01
+
+
+./isaaclab.sh -p scripts/tools/convert_mesh.py \
+  /home/crtie/crtie/Manual2Skill2/chair_real/backrest.obj \
+  /home/crtie/crtie/Manual2Skill2/chair_real/backrest3.usd \
+  --collision-approximation sdf \
+  --mass 0.01
