@@ -126,6 +126,19 @@ class MeshConverter(AssetConverterBase):
                     # TODO: Move this to a new Schema: https://github.com/isaac-orbit/IsaacLab/issues/163
                     mesh_collision_api = UsdPhysics.MeshCollisionAPI.Apply(child_mesh_prim)
                     mesh_collision_api.GetApproximationAttr().Set(cfg.collision_approximation)
+                    
+                    # -- Special handling for SDF collision approximation
+                    if cfg.collision_approximation == "sdf":
+                        # Import PhysxSchema for SDF properties
+                        from pxr import PhysxSchema
+                        # Apply PhysxSDFMeshCollisionAPI for SDF-specific settings
+                        sdf_collision_api = PhysxSchema.PhysxSDFMeshCollisionAPI.Apply(child_mesh_prim)
+                        # Set SDF resolution to 1024
+                        sdf_collision_api.CreateSdfResolutionAttr().Set(1024)
+                        # Optionally set other SDF parameters
+                        # sdf_collision_api.CreateSdfMarginAttr().Set(0.01)  # margin in meters
+                        # sdf_collision_api.CreateSdfSubgridResolutionAttr().Set(6)  # subgrid resolution
+                    
                     # -- Collider properties such as offset, scale, etc.
                     schemas.define_collision_properties(
                         prim_path=child_mesh_prim.GetPath(), cfg=cfg.collision_props, stage=stage

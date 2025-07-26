@@ -122,7 +122,7 @@ class Screw(HeldAssetCfg):
 
 @configclass
 class backrest_asset_config():
-    usd_path = f"{CHAIR_ASSET_DIR}/backrest2.usd"
+    usd_path = f"{CHAIR_ASSET_DIR}/backrest3.usd"
     mass = 0.1
     height = 0.16
     base_height = 0.25
