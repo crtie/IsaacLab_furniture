@@ -19,7 +19,7 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import axis_angle_from_quat
 
 from . import factory_control as fc
-from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChair2Cfg
+from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChair3Cfg
 from .np_tasks_cfg import ChairAssembly1, ConnectionCfg
 from pdb import set_trace as bp
 from .np_utils.group_utils import SE3dist
@@ -29,10 +29,10 @@ from pxr import Usd, UsdPhysics, PhysxSchema, Sdf, Gf, Tf
 from omni.physx.scripts import utils
 import omni.usd
 
-class FrankaChair2Env(DirectRLEnv):
-    cfg: FrankaChair2Cfg
+class FrankaChair3Env(DirectRLEnv):
+    cfg: FrankaChair3Cfg
 
-    def __init__(self, cfg: FrankaChair2Cfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: FrankaChair3Cfg, render_mode: str | None = None, **kwargs):
         # Update number of obs/states
         cfg.observation_space = sum([OBS_DIM_CFG[obs] for obs in cfg.obs_order])
         cfg.state_space = sum([STATE_DIM_CFG[state] for state in cfg.state_order])
@@ -184,13 +184,14 @@ class FrankaChair2Env(DirectRLEnv):
         if self.cfg_task.task_idx == 3:
             self._plug1 = RigidObject(self.cfg_task.plug1)
             self._plug2 = RigidObject(self.cfg_task.plug2)
-            self._rod_asset = RigidObject(self.cfg_task.rod)
-            self._held_asset = self._rod_asset
+            self._backrest_asset = RigidObject(self.cfg_task.backrest)
+            self._held_asset = self._backrest_asset
             self._connection_cfg = self.cfg_task.connection_cfg3
             
         if self.cfg_task.task_idx == 4:
-            self._plug1 = RigidObject(self.cfg_task.screw)
+            self._plug1 = RigidObject(self.cfg_task.plug1)
             self._held_asset = self._plug1
+            self._backrest_asset = RigidObject(self.cfg_task.backrest)
             self._connection_cfg = self.cfg_task.connection_cfg5
         # self._backrest_asset = RigidObject(self.cfg_task.backrest_asset)
         
@@ -362,7 +363,7 @@ class FrankaChair2Env(DirectRLEnv):
             joint_path = "/World/envs/env_0/FixedJoint2"
             connection_cfg = self.cfg_task.connection_cfg2
         elif connection_idx == 3:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Rod")
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Backrest")
             joint_path = "/World/envs/env_0/FixedJoint3"
             connection_cfg = self.cfg_task.connection_cfg3
 
@@ -776,9 +777,9 @@ class FrankaChair2Env(DirectRLEnv):
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
         elif self.cfg_task.name == "chair_assembly" and self.cfg_task.task_idx == 3:
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
-            held_asset_relative_pos[:, 2] = self.cfg_task.rod_asset_cfg.height
+            held_asset_relative_pos[:, 2] = self.cfg_task.backrest_asset_cfg.height
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
-            held_asset_relative_pos[:, 0] = 0.025
+            held_asset_relative_pos[:, 0] = -0.05
             held_asset_relative_pos[:, 1] = 0.0
             # held_asset_relative_pos[:, 2] = 0.05
         else:
@@ -879,7 +880,6 @@ class FrankaChair2Env(DirectRLEnv):
                 above_fixed_pos = fixed_tip_pos.clone()
                 above_fixed_pos[:, 2] += self.cfg_task.hand_init_pos[2]
                 above_fixed_pos[:, 1] += 0.2
-                above_fixed_pos[:, 0] += 0.2
 
                 rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
                 above_fixed_pos_rand = 2 * (rand_sample - 0.5) + 0.5  # [-1, 1] # [-0.5, 1.5]
@@ -1051,7 +1051,6 @@ class FrankaChair2Env(DirectRLEnv):
             physics_sim_view.set_gravity(carb.Float3(*self.cfg.sim.gravity))
             self.step_sim_no_action()
 
-        # insert the rod1 into the frame via the plugin
         elif self.cfg_task.task_idx == 3:
             # Disable gravity.
             physics_sim_view = sim_utils.SimulationContext.instance().physics_sim_view
@@ -1060,15 +1059,15 @@ class FrankaChair2Env(DirectRLEnv):
 
             # Compute the frame on the bolt that would be used as observation: fixed_pos_obs_frame
             # For example, the tip of the bolt can be used as the observation frame
-            rod_tip_pos_local = torch.zeros_like(self.held_pos)
-            rod_tip_pos_local[:, 2] += self.cfg_task.rod_asset_cfg.base_height
-            rod_tip_quat_local = (
+            backrest_tip_pos_local = torch.zeros_like(self.held_pos)
+            backrest_tip_pos_local[:, 2] += self.cfg_task.backrest_asset_cfg.base_height
+            backrest_tip_quat_local = (
             torch.tensor([1.0, 0.0, 1.0, 0.0], device=self.device).unsqueeze(0).repeat(self.num_envs, 1))
-            _, rod_tip_pos = torch_utils.tf_combine(
-                self.held_quat, self.held_pos, rod_tip_quat_local, rod_tip_pos_local
+            _, backrest_tip_pos = torch_utils.tf_combine(
+                self.held_quat, self.held_pos, backrest_tip_quat_local, backrest_tip_pos_local
             )
 
-            # (2) Move gripper to randomizes location above rod asset. Keep trying until IK succeeds.
+            # (2) Move gripper to randomizes location above backrest asset. Keep trying until IK succeeds.
             # (a) get position vector to target
             bad_envs = env_ids.clone()
             ik_attempt = 0
@@ -1078,15 +1077,15 @@ class FrankaChair2Env(DirectRLEnv):
             while True:
                 n_bad = bad_envs.shape[0]
 
-                above_rod_pos = rod_tip_pos.clone()
-                above_rod_pos[:, 0] += 0.1
-                above_rod_pos[:, 1] -= 0.25
+                above_backrest_pos = backrest_tip_pos.clone()
+                above_backrest_pos[:, 0] -= 0.1
+                above_backrest_pos[:, 1] -= 0.25
 
                 rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
-                above_rod_pos_rand = 0.01 * (rand_sample - 0.5) 
+                above_backrest_pos_rand = 0.01 * (rand_sample - 0.5) 
                 hand_init_pos_rand = torch.tensor(self.cfg_task.hand_init_pos_noise, device=self.device)
-                above_rod_pos_rand = above_rod_pos_rand @ torch.diag(hand_init_pos_rand)
-                above_rod_pos[bad_envs] += above_rod_pos_rand
+                above_backrest_pos_rand = above_backrest_pos_rand @ torch.diag(hand_init_pos_rand)
+                above_backrest_pos[bad_envs] += above_backrest_pos_rand
 
                 # (b) get random orientation facing down
                 hand_down_euler = (
@@ -1094,17 +1093,17 @@ class FrankaChair2Env(DirectRLEnv):
                 )
 
                 rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
-                above_rod_orn_noise = .01 * (rand_sample - 0.5)  # [-1, 1]
+                above_backrest_orn_noise = .01 * (rand_sample - 0.5)  # [-1, 1]
                 hand_init_orn_rand = torch.tensor(self.cfg_task.hand_init_orn_noise, device=self.device)
-                above_rod_orn_noise = above_rod_orn_noise @ torch.diag(hand_init_orn_rand)
-                hand_down_euler += above_rod_orn_noise
+                above_backrest_orn_noise = above_backrest_orn_noise @ torch.diag(hand_init_orn_rand)
+                hand_down_euler += above_backrest_orn_noise
                 self.hand_down_euler[bad_envs, ...] = hand_down_euler
                 hand_down_quat[bad_envs, :] = torch_utils.quat_from_euler_xyz(
                     roll=hand_down_euler[:, 0], pitch=hand_down_euler[:, 1], yaw=hand_down_euler[:, 2]
                 )
 
                 # (c) iterative IK Method
-                self.ctrl_target_fingertip_midpoint_pos[bad_envs, ...] = above_rod_pos[bad_envs, ...]
+                self.ctrl_target_fingertip_midpoint_pos[bad_envs, ...] = above_backrest_pos[bad_envs, ...]
                 self.ctrl_target_fingertip_midpoint_quat[bad_envs, ...] = hand_down_quat[bad_envs, :]
 
                 pos_error, aa_error = self.set_pos_inverse_kinematics(env_ids=bad_envs)
@@ -1198,7 +1197,7 @@ class FrankaChair2Env(DirectRLEnv):
                 t2=self.held_asset_pos_noise,
             )
 
-            rot_euler = torch.tensor([0.0, 1.5707, 1.5707], device=self.device).repeat(
+            rot_euler = torch.tensor([0.0, -1.5707, 1.5707], device=self.device).repeat(
                 self.num_envs, 1
             )
             translated_held_asset_quat = torch_utils.quat_from_euler_xyz(
@@ -1208,9 +1207,9 @@ class FrankaChair2Env(DirectRLEnv):
             held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
             held_state[:, 3:7] = translated_held_asset_quat 
             held_state[:, 7:] = 0.0
-            self._rod_asset.write_root_pose_to_sim(held_state[:, 0:7])
-            self._rod_asset.write_root_velocity_to_sim(held_state[:, 7:])
-            self._rod_asset.reset()
+            self._backrest_asset.write_root_pose_to_sim(held_state[:, 0:7])
+            self._backrest_asset.write_root_velocity_to_sim(held_state[:, 7:])
+            self._backrest_asset.reset()
 
 
 
