@@ -16,6 +16,7 @@ from isaacsim.core.utils.extensions import enable_extension
 
 from .asset_converter_base import AssetConverterBase
 from .urdf_converter_cfg import UrdfConverterCfg
+from pdb import set_trace as bp
 
 
 class UrdfConverter(AssetConverterBase):
@@ -88,6 +89,10 @@ class UrdfConverter(AssetConverterBase):
                 import_config=import_config,
                 dest_path=self.usd_path,
             )
+            
+            # Handle SDF collision approximation after USD conversion
+            if self.cfg.collider_type == "sdf":
+                self._apply_sdf_collision_settings()
         else:
             raise ValueError(f"Failed to parse URDF file: {cfg.asset_path}")
 
@@ -117,8 +122,10 @@ class UrdfConverter(AssetConverterBase):
         # mesh simplification settings
         convex_decomp = self.cfg.collider_type == "convex_decomposition"
         import_config.set_convex_decomp(convex_decomp)
-        # create collision geometry from visual geometry
-        import_config.set_collision_from_visuals(self.cfg.collision_from_visuals)
+        
+        # 强制从 visual geometry 创建 collision geometry
+        import_config.set_collision_from_visuals(True)
+        
         # consolidating links that are connected by fixed joints
         import_config.set_merge_fixed_joints(self.cfg.merge_fixed_joints)
         # -- physics settings
@@ -320,3 +327,83 @@ class UrdfConverter(AssetConverterBase):
                 m_eq = joint.inertia
             damping = 2 * m_eq * joint.drive.natural_frequency * joint.drive.damping_ratio
             self._set_joint_drive_damping(joint, damping)
+
+    def _apply_sdf_collision_settings(self):
+        """Apply SDF collision settings to all mesh prims in the converted USD."""
+        import omni.usd
+        from pxr import Usd, UsdPhysics, PhysxSchema, UsdGeom
+        
+        # Open the converted USD file directly
+        stage = Usd.Stage.Open(self.usd_path)
+        if not stage:
+            print(f"Failed to open USD file: {self.usd_path}")
+            return
+        
+        print(f"Processing USD file: {self.usd_path}")
+        
+        # Find all mesh prims in the stage
+        mesh_count = 0
+        visual_mesh_count = 0
+        
+        # First try to find any mesh prims (including visual meshes)
+        for prim in stage.Traverse():
+            print(f"Checking prim: {prim.GetPath()}, Type: {prim.GetTypeName()}")
+            
+            if prim.GetTypeName() == "Mesh" or UsdGeom.Mesh(prim):
+                # Check if this is a visual mesh
+                if "visual" in str(prim.GetPath()).lower():
+                    visual_mesh_count += 1
+                    print(f"Found visual mesh #{visual_mesh_count}: {prim.GetPath()}")
+                    
+                    # For SDF collision, we need to copy visual mesh to collision
+                    # or apply collision properties directly to visual mesh
+                    parent_prim = prim.GetParent()
+                    if parent_prim:
+                        # Try to find the collision sibling
+                        collision_path = str(parent_prim.GetPath()).replace("visuals", "collisions")
+                        collision_prim = stage.GetPrimAtPath(collision_path)
+                        
+                        if collision_prim and collision_prim.IsValid():
+                            print(f"Found corresponding collision prim: {collision_path}")
+                            
+                            # Create a mesh reference in the collision prim
+                            mesh_path = f"{collision_path}/collision_mesh"
+                            collision_mesh = UsdGeom.Mesh.Define(stage, mesh_path)
+                            
+                            # Copy geometry from visual mesh
+                            visual_mesh = UsdGeom.Mesh(prim)
+                            collision_mesh.GetPointsAttr().Set(visual_mesh.GetPointsAttr().Get())
+                            collision_mesh.GetFaceVertexIndicesAttr().Set(visual_mesh.GetFaceVertexIndicesAttr().Get())
+                            collision_mesh.GetFaceVertexCountsAttr().Set(visual_mesh.GetFaceVertexCountsAttr().Get())
+                            
+                            # Apply SDF collision to the new collision mesh
+                            mesh_collision_api = UsdPhysics.MeshCollisionAPI.Apply(collision_mesh.GetPrim())
+                            mesh_collision_api.GetApproximationAttr().Set("sdf")
+                            
+                            # Apply PhysxSDFMeshCollisionAPI for SDF-specific settings
+                            sdf_collision_api = PhysxSchema.PhysxSDFMeshCollisionAPI.Apply(collision_mesh.GetPrim())
+                            sdf_collision_api.CreateSdfResolutionAttr().Set(1024)
+                            
+                            mesh_count += 1
+                            print(f"Created and applied SDF collision to: {mesh_path}")
+            
+            elif "collision" in str(prim.GetPath()).lower():
+                # This is already a collision mesh
+                mesh_count += 1
+                print(f"Found collision mesh #{mesh_count}: {prim.GetPath()}")
+                
+                # Apply SDF collision approximation
+                mesh_collision_api = UsdPhysics.MeshCollisionAPI.Apply(prim)
+                mesh_collision_api.GetApproximationAttr().Set("sdf")
+                
+                # Apply PhysxSDFMeshCollisionAPI for SDF-specific settings
+                sdf_collision_api = PhysxSchema.PhysxSDFMeshCollisionAPI.Apply(prim)
+                sdf_collision_api.CreateSdfResolutionAttr().Set(1024)
+                print(f"Applied SDF collision to existing collision mesh: {prim.GetPath()}")
+        
+        print(f"Total collision meshes processed: {mesh_count}")
+        print(f"Total visual meshes found: {visual_mesh_count}")
+        
+        # Save the changes to the USD file
+        stage.Save()
+        print(f"Saved changes to: {self.usd_path}")

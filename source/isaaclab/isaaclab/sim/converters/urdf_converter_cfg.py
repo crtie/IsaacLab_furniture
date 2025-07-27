@@ -114,7 +114,7 @@ class UrdfConverterCfg(AssetConverterBaseCfg):
     collision_from_visuals = False
     """Whether to create collision geometry from visual geometry. Defaults to False."""
 
-    collider_type: Literal["convex_hull", "convex_decomposition"] = "convex_hull"
+    collider_type: Literal["convex_hull", "convex_decomposition", "sdf"] = "convex_hull"
     """The collision shape simplification. Defaults to "convex_hull".
 
     Supported values are:

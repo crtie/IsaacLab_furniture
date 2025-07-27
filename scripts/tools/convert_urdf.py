@@ -72,6 +72,18 @@ parser.add_argument(
     help="The name of the root link in the URDF. If not specified, the first link will be used.",
 )
 
+parser.add_argument(
+    "--collision-approximation",
+    type=str,
+    default="sdf",
+    choices=["convexDecomposition", "convexHull", "boundingCube", "boundingSphere", "meshSimplification", "none", "sdf"],
+    help=(
+        'The method used for approximating collision mesh. Set to "none" '
+        "to not add a collision mesh to the converted mesh."
+    ),
+)
+
+
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -91,6 +103,7 @@ import isaacsim.core.utils.stage as stage_utils
 import omni.kit.app
 
 from isaaclab.sim.converters import UrdfConverter, UrdfConverterCfg
+from isaaclab.sim.schemas import schemas_cfg
 from isaaclab.utils.assets import check_file_path
 from isaaclab.utils.dict import print_dict
 
@@ -106,6 +119,9 @@ def main():
     dest_path = args_cli.output
     if not os.path.isabs(dest_path):
         dest_path = os.path.abspath(dest_path)
+
+    # Collision properties
+    collision_props = schemas_cfg.CollisionPropertiesCfg(collision_enabled=args_cli.collision_approximation != "none")
 
     # Create Urdf converter config
     urdf_converter_cfg = UrdfConverterCfg(
@@ -123,6 +139,7 @@ def main():
             target_type=args_cli.joint_target_type,
         ),
         root_link_name= args_cli.root_link_name if args_cli.root_link_name else None,
+        collider_type=args_cli.collision_approximation,
     )
 
     # Print info
