@@ -192,6 +192,13 @@ class FrankaChair3Env(DirectRLEnv):
             self._plug1 = RigidObject(self.cfg_task.plug1)
             self._held_asset = self._plug1
             self._backrest_asset = RigidObject(self.cfg_task.backrest)
+            self._connection_cfg = self.cfg_task.connection_cfg4
+
+        if self.cfg_task.task_idx == 5:
+            self._plug1 = RigidObject(self.cfg_task.plug1)
+            self._plug2 = RigidObject(self.cfg_task.plug2)
+            self._held_asset = self._plug2
+            self._backrest_asset = RigidObject(self.cfg_task.backrest)
             self._connection_cfg = self.cfg_task.connection_cfg5
         # self._backrest_asset = RigidObject(self.cfg_task.backrest_asset)
         
@@ -366,6 +373,14 @@ class FrankaChair3Env(DirectRLEnv):
             held_prim = stage.GetPrimAtPath("/World/envs/env_0/Backrest")
             joint_path = "/World/envs/env_0/FixedJoint3"
             connection_cfg = self.cfg_task.connection_cfg3
+        elif connection_idx == 4:
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
+            joint_path = "/World/envs/env_0/FixedJoint4"
+            connection_cfg = self.cfg_task.connection_cfg4
+        elif connection_idx == 5:
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
+            joint_path = "/World/envs/env_0/FixedJoint5"
+            connection_cfg = self.cfg_task.connection_cfg5
 
 
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
@@ -373,11 +388,7 @@ class FrankaChair3Env(DirectRLEnv):
 
         to_path = held_prim.GetPath()
         from_path = fixed_prim.GetPath()
-        # rel_mat1 = self._get_real_mat()
         rel_mat = connection_cfg.pose_to_base
-        # rel_mat = np.eye(4, dtype=np.float32)
-        # rel_mat[:3, :3] = rel_mat1[:3, :3]
-        # rel_mat[:3, 3] = rel_mat2[:3, 3]
         pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
         rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
         rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
@@ -408,12 +419,8 @@ class FrankaChair3Env(DirectRLEnv):
         print("t_tangent:", t_tangent)
         print("t_normal:", t_normal)
         # print("joint names of frame:",self._fixed_asset.joint_names)
-        if not self.joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.005:
-            if self.cfg_task.task_idx == 4:
-                self._create_screw_joint()
-            else:
-                self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
-                # pass
+        if not self.joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.08:
+            self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
             self.joint_created = True
             rel_mat = self._get_real_mat()
             gt_real_mat = self._connection_cfg.pose_to_base
@@ -458,8 +465,8 @@ class FrankaChair3Env(DirectRLEnv):
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
         self._check_attach_condition()
-        if self.joint_created and self.cfg_task.task_idx == 4:
-            self._sync_held_asset()
+        # if self.joint_created and self.cfg_task.task_idx == 4:
+        #     self._sync_held_asset()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
@@ -771,7 +778,7 @@ class FrankaChair3Env(DirectRLEnv):
 
     def get_handheld_asset_relative_pose(self):
         """Get default relative pose between help asset and fingertip."""
-        if self.cfg_task.name == "chair_assembly" and (self.cfg_task.task_idx == 1 or self.cfg_task.task_idx == 2 or self.cfg_task.task_idx == 4):
+        if self.cfg_task.name == "chair_assembly" and self.cfg_task.task_idx in [1, 2, 4, 5]:
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
             held_asset_relative_pos[:, 2] = self.cfg_task.held_asset_cfg.height
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
@@ -779,8 +786,9 @@ class FrankaChair3Env(DirectRLEnv):
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
             held_asset_relative_pos[:, 2] = self.cfg_task.backrest_asset_cfg.height
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
-            held_asset_relative_pos[:, 0] = -0.05
-            held_asset_relative_pos[:, 1] = 0.0
+            held_asset_relative_pos[:, 0] = -0.07
+            #1是沿手掌平面
+            held_asset_relative_pos[:, 1] = -0.01
             # held_asset_relative_pos[:, 2] = 0.05
         else:
             raise NotImplementedError("Task not implemented")
@@ -854,7 +862,7 @@ class FrankaChair3Env(DirectRLEnv):
         self.step_sim_no_action()
 
 
-        if self.cfg_task.task_idx in [1,2,4]:
+        if self.cfg_task.task_idx in [1,2,4,5]:
             fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
             fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
             fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
@@ -865,9 +873,11 @@ class FrankaChair3Env(DirectRLEnv):
             self.fixed_pos_obs_frame[:] = fixed_tip_pos
             rela_trans = fixed_tip_pos.clone()
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
-            rela_trans[:, 1] += 0.2
+            rela_trans[:, 1] += 0.42
+            rela_trans[:, 0] -= 0.01
 
-        else:
+
+        elif self.cfg_task.task_idx == 3:
             backrest_tip_pos_local = torch.zeros_like(self.held_pos)
             backrest_tip_pos_local[:, 2] += self.cfg_task.backrest_asset_cfg.base_height
             backrest_tip_quat_local = (
@@ -876,7 +886,7 @@ class FrankaChair3Env(DirectRLEnv):
                 self.held_quat, self.held_pos, backrest_tip_quat_local, backrest_tip_pos_local
             )
             rela_trans = backrest_tip_pos.clone()
-            rela_trans[:, 0] -= 0.1
+            rela_trans[:, 0] -= 0.12
             rela_trans[:, 1] -= 0.25
 
 
@@ -935,90 +945,73 @@ class FrankaChair3Env(DirectRLEnv):
 
         if self.cfg_task.task_idx == 2:
 
-            fixed_pos = self.fixed_pos[0]
-            fixed_quat = self.fixed_quat[0]
-            rel_SE3 = self.cfg_task.connection_cfg1.pose_to_base
-            r = R.from_matrix(rel_SE3[:3, :3])
-            quat_xyzw = r.as_quat()
-            quat_wxyz = torch.tensor([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], device=self.device, dtype=torch.float32)
-            rel_t = torch.tensor(rel_SE3[:3, 3], device=self.device, dtype=torch.float32)
+            # fixed_pos = self.fixed_pos[0]
+            # fixed_quat = self.fixed_quat[0]
+            # rel_SE3 = self.cfg_task.connection_cfg1.pose_to_base
+            # r = R.from_matrix(rel_SE3[:3, :3])
+            # quat_xyzw = r.as_quat()
+            # quat_wxyz = torch.tensor([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], device=self.device, dtype=torch.float32)
+            # rel_t = torch.tensor(rel_SE3[:3, 3], device=self.device, dtype=torch.float32)
 
-            translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
-                q1=fixed_quat, t1=fixed_pos, q2=quat_wxyz, t2=rel_t
-            )
+            # translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
+            #     q1=fixed_quat, t1=fixed_pos, q2=quat_wxyz, t2=rel_t
+            # )
 
 
-            held_state = self._plug1.data.default_root_state.clone()
-            held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
-            held_state[:, 3:7] = translated_held_asset_quat
-            held_state[:, 7:] = 0.0
-            self._plug1.write_root_pose_to_sim(held_state[:, 0:7])
-            self._plug1.write_root_velocity_to_sim(held_state[:, 7:])
-            self._plug1.reset()
+            # held_state = self._plug1.data.default_root_state.clone()
+            # held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
+            # held_state[:, 3:7] = translated_held_asset_quat
+            # held_state[:, 7:] = 0.0
+            # self._plug1.write_root_pose_to_sim(held_state[:, 0:7])
+            # self._plug1.write_root_velocity_to_sim(held_state[:, 7:])
+            # self._plug1.reset()
             self._create_fixed_joint(connection_idx=1)
 
         elif self.cfg_task.task_idx == 3:
 
-            fixed_pos = self.fixed_pos[0]
-            fixed_quat = self.fixed_quat[0]
+            # fixed_pos = self.fixed_pos[0]
+            # fixed_quat = self.fixed_quat[0]
 
-            rel1_SE3 = self.cfg_task.connection_cfg1.pose_to_base
-            r = R.from_matrix(rel1_SE3[:3, :3])
-            quat_xyzw = r.as_quat()
-            quat_wxyz = torch.tensor([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], device=self.device, dtype=torch.float32)
-            rel_t = torch.tensor(rel1_SE3[:3, 3], device=self.device, dtype=torch.float32)
-            translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
-                q1=fixed_quat, t1=fixed_pos, q2=quat_wxyz, t2=rel_t
-            )
-            plug1_state = self._plug1.data.default_root_state.clone()
-            plug1_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
-            plug1_state[:, 3:7] = translated_held_asset_quat
-            plug1_state[:, 7:] = 0.0
-            self._plug1.write_root_pose_to_sim(plug1_state[:, 0:7])
-            self._plug1.write_root_velocity_to_sim(plug1_state[:, 7:])
-            self._plug1.reset()
+            # rel1_SE3 = self.cfg_task.connection_cfg1.pose_to_base
+            # r = R.from_matrix(rel1_SE3[:3, :3])
+            # quat_xyzw = r.as_quat()
+            # quat_wxyz = torch.tensor([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], device=self.device, dtype=torch.float32)
+            # rel_t = torch.tensor(rel1_SE3[:3, 3], device=self.device, dtype=torch.float32)
+            # translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
+            #     q1=fixed_quat, t1=fixed_pos, q2=quat_wxyz, t2=rel_t
+            # )
+            # plug1_state = self._plug1.data.default_root_state.clone()
+            # plug1_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
+            # plug1_state[:, 3:7] = translated_held_asset_quat
+            # plug1_state[:, 7:] = 0.0
+            # self._plug1.write_root_pose_to_sim(plug1_state[:, 0:7])
+            # self._plug1.write_root_velocity_to_sim(plug1_state[:, 7:])
+            # self._plug1.reset()
             self._create_fixed_joint(connection_idx=1)
 
-            rel2_SE3 = self.cfg_task.connection_cfg2.pose_to_base
-            r = R.from_matrix(rel2_SE3[:3, :3])
-            quat_xyzw = r.as_quat()
-            quat_wxyz = torch.tensor([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], device=self.device, dtype=torch.float32)
-            rel_t = torch.tensor(rel2_SE3[:3, 3], device=self.device, dtype=torch.float32)
-            translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
-                q1=fixed_quat, t1=fixed_pos, q2=quat_wxyz, t2=rel_t
-            )
-            held_state = self._plug2.data.default_root_state.clone()
-            held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
-            held_state[:, 3:7] = translated_held_asset_quat
-            held_state[:, 7:] = 0.0
-            self._plug2.write_root_pose_to_sim(held_state[:, 0:7])
-            self._plug2.write_root_velocity_to_sim(held_state[:, 7:])
-            self._plug2.reset()
+            # rel2_SE3 = self.cfg_task.connection_cfg2.pose_to_base
+            # r = R.from_matrix(rel2_SE3[:3, :3])
+            # quat_xyzw = r.as_quat()
+            # quat_wxyz = torch.tensor([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], device=self.device, dtype=torch.float32)
+            # rel_t = torch.tensor(rel2_SE3[:3, 3], device=self.device, dtype=torch.float32)
+            # translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
+            #     q1=fixed_quat, t1=fixed_pos, q2=quat_wxyz, t2=rel_t
+            # )
+            # held_state = self._plug2.data.default_root_state.clone()
+            # held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
+            # held_state[:, 3:7] = translated_held_asset_quat
+            # held_state[:, 7:] = 0.0
+            # self._plug2.write_root_pose_to_sim(held_state[:, 0:7])
+            # self._plug2.write_root_velocity_to_sim(held_state[:, 7:])
+            # self._plug2.reset()
             self._create_fixed_joint(connection_idx=2)
 
         elif self.cfg_task.task_idx == 4:
-
-            fixed_pos = self.fixed_pos[0]
-            fixed_quat = self.fixed_quat[0]
-            rel_SE3 = self.cfg_task.connection_cfg3.pose_to_base
-            r = R.from_matrix(rel_SE3[:3, :3])
-            quat_xyzw = r.as_quat()
-            quat_wxyz = torch.tensor([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], device=self.device, dtype=torch.float32)
-            rel_t = torch.tensor(rel_SE3[:3, 3], device=self.device, dtype=torch.float32)
-
-            translated_held_asset_quat, translated_held_asset_pos = torch_utils.tf_combine(
-                q1=fixed_quat, t1=fixed_pos, q2=quat_wxyz, t2=rel_t
-            )
-
-
-            held_state = self._backrest_asset.data.default_root_state.clone()
-            held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
-            held_state[:, 3:7] = translated_held_asset_quat
-            held_state[:, 7:] = 0.0
-            self._backrest_asset.write_root_pose_to_sim(held_state[:, 0:7])
-            self._backrest_asset.write_root_velocity_to_sim(held_state[:, 7:])
-            self._backrest_asset.reset()
             self._create_fixed_joint(connection_idx=3)
+
+        if self.cfg_task.task_idx == 5:
+            self._create_fixed_joint(connection_idx=3)
+            self._create_fixed_joint(connection_idx=4)
 
         # (3) Randomize asset-in-gripper location.
         # flip gripper z orientation
