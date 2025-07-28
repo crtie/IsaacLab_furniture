@@ -2,15 +2,16 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
-
+import os, sys
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 import numpy as np
 
+dir_path = os.path.dirname(os.path.abspath(__file__))
 ASSET_DIR = f"{ISAACLAB_NUCLEUS_DIR}/Factory"
-CHAIR_ASSET_DIR = "source/isaaclab_tasks/isaaclab_tasks/direct/np/asset"
+CHAIR_ASSET_DIR = os.path.join(dir_path, "asset")
 
 @configclass
 class FixedAssetCfg:
@@ -106,7 +107,7 @@ class ChairFrame(FixedAssetCfg):
 
 @configclass
 class ChairFrameBack(FixedAssetCfg):
-    usd_path = "/home/crtie/crtie/Manual2Skill2/chair_real/frame_back.usd"
+    usd_path = f"{CHAIR_ASSET_DIR}/mesh/frame_back.usd"
     diameter = 0.0081
     height = 0.025
     mass = 0.05
@@ -114,7 +115,7 @@ class ChairFrameBack(FixedAssetCfg):
 
 @configclass
 class ChairFrameBackRod(FixedAssetCfg):
-    usd_path = "/home/crtie/crtie/Manual2Skill2/chair_real/frame_back_rod.usd"
+    usd_path = f"{CHAIR_ASSET_DIR}/mesh/frame_back_rod.usd"
     diameter = 0.0081
     height = 0.025
     mass = 0.05
@@ -150,26 +151,26 @@ class rod_asset_config(HeldAssetCfg):
     height = -0.04
     base_height = 0.25
 
+
 @configclass
 class ChairAssembly1(FactoryTask):
     #! crtie: task_idx is used to identify the task in the environment.
     #! crtie: task 1 is "insert the first plug into the first hole",
     #! crtie: task 2 is "insert the second plug into the second hole",
-    #! crtie: task 3 is "insert the rod into the frame via the plug",
-    #! crtie: task 4 is "insert the plug1 into the rod".
-    #! crtie: task 5 is "insert the plug2 into the rod".
-    task_idx = 5
+    #! crtie: task 3 is "insert the backrest into the frame via the plug",
+    #! crtie: task 4 is "insert the plug1 into the backrest".
+    #! crtie: task 5 is "insert the plug2 into the backrest".
+    task_idx = 4
 
 
     name = "chair_assembly"
-    fixed_asset_cfg = ChairFrameBackRod()
+    fixed_asset_cfg = ChairFrame()
     held_asset_cfg = Plug()
     backrest_asset_cfg = backrest_asset_config()
     rod_asset_cfg = rod_asset_config()
     plug_config = Plug()
     asset_size = 8.0
     duration_s = 10.0
-
 
     # Robot
     hand_init_pos: list = [0.0, 0.0, 0.06]  # Relative to fixed asset tip.
@@ -185,7 +186,6 @@ class ChairAssembly1(FactoryTask):
         hand_init_orn_noise: list = [0.0, 0.0, 0.0]
     elif task_idx == 4 or task_idx == 5:
         hand_init_pos: list = [0.0, 0.0, 0.28]
-
 
     # Fixed Asset (applies to all tasks)
     # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
@@ -224,7 +224,7 @@ class ChairAssembly1(FactoryTask):
             ),
             scale = np.array([1.0, 1.0, 1.0]), 
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                enabled_self_collisions=False,
+                enabled_self_collisions=True,
                 fix_root_link=True,  # add this so the fixed asset is set to have a fixed base
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass=fixed_asset_cfg.mass),
@@ -290,10 +290,10 @@ class ChairAssembly1(FactoryTask):
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
 
-    rod: RigidObjectCfg = RigidObjectCfg(
-        prim_path="/World/envs/env_.*/Rod",
+    backrest: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Backrest",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=rod_asset_cfg.usd_path,
+            usd_path=backrest_asset_cfg.usd_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
                 max_depenetration_velocity=5.0,
@@ -316,27 +316,30 @@ class ChairAssembly1(FactoryTask):
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.01, 0.09, 0.97), rot=(0.5, -0.5, 0.5, 0.5)),
     )
 
+
+
     connection_cfg1: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Plug1",
         pose_to_base = np.array(
-            [[-0.97, 0.0, 0.0, 0.0185],
+            [[-0.97, 0.0, 0.0, 0.01824],
             [0.24, 0.0, 1.0, 0.0373803],
-            [0.0, 1.0, 0.0, -0.271],
+            [0.0, 1.0, 0.0, -0.45],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
     )
+
 
     connection_cfg2: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Plug2",
         pose_to_base = np.array(
-            [[-0.97, 0.0, 0.0, 0.0185],
+            [[-0.97, 0.0, 0.0, 0.0179],
             [0.24, 0.0, 1.0, 0.0373803],
-            [0.0, 1.0, 0.0, -0.249],
+            [0.0, 1.0, 0.0, -0.418],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
@@ -345,25 +348,29 @@ class ChairAssembly1(FactoryTask):
     connection_cfg3: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/Rod",
+        connector_path = "/World/envs/env_.*/Backrest",
         pose_to_base = np.array(
-            [[0.0, -1.0, 0.0,  2.4958238e-02],
-            [ -1.0, 0.0,  0.0,  2.2895001e-01],
-            [0.0, -0.0,  -1.0, -2.7744323e-01],
+            [[0.0, 1.0, 0.0,  4.8889988e-03],
+            [ -1.0, 0.0,  0.0, 2.1893580e-01],
+            [0.0, -0.0,  1.0, -3.7405658e-01],
             [ 0.0,  0.0,  0.0,  1.0]]),
+        # pose_to_base = np.array(
+        #     [[0.0, 1.0, 0.0,  2.3256524e-02],
+        #     [ -1.0, 0.0,  0.0, 2.8873468e-02],
+        #     [0.0, -0.0,  1.0, -3.7360814e-01],
+        #     [ 0.0,  0.0,  0.0,  1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
     )
-
 
     connection_cfg4: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Plug1",
         pose_to_base = np.array(
-            [[-0.97, 0.0, 0.0, 0.0182],
-            [0.24, 0.0, 1.0, 0.236],
-            [0.0, 1.0, 0.0, -0.27],
+            [[-1.0, 0.0, 0.0, 0.018],
+            [0.0, 0.0, 1.0, 0.228],
+            [0.0, 1.0, 0.0, -0.45],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
@@ -374,9 +381,9 @@ class ChairAssembly1(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Plug2",
         pose_to_base = np.array(
-            [[-0.97, 0.0, 0.0, 0.0186],
-            [0.24, 0.0, 1.0, 0.236],
-            [0.0, 1.0, 0.0, -0.247],
+            [[-1.0, 0.0, 0.0, 0.018],
+            [0.0, 0.0, 1.0, 0.228],
+            [0.0, 1.0, 0.0, -0.417],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
@@ -614,25 +621,27 @@ class ChairAssembly2(FactoryTask):
         axis_t = np.array([0.0, 1.0, 0.0]),
     )
 
+
 @configclass
 class ChairAssembly3(FactoryTask):
     #! crtie: task_idx is used to identify the task in the environment.
     #! crtie: task 1 is "insert the first plug into the first hole",
     #! crtie: task 2 is "insert the second plug into the second hole",
-    #! crtie: task 3 is "insert the backrest into the frame via the plug",
-    #! crtie: task 4 is "insert the plug1 into the backrest".
-    #! crtie: task 5 is "insert the plug2 into the backrest".
-    task_idx = 4
+    #! crtie: task 3 is "insert the rod into the frame via the plug",
+    #! crtie: task 4 is "insert the plug1 into the rod".
+    #! crtie: task 5 is "insert the plug2 into the rod".
+    task_idx = 5
 
 
     name = "chair_assembly"
-    fixed_asset_cfg = ChairFrame()
+    fixed_asset_cfg = ChairFrameBackRod()
     held_asset_cfg = Plug()
     backrest_asset_cfg = backrest_asset_config()
     rod_asset_cfg = rod_asset_config()
     plug_config = Plug()
     asset_size = 8.0
     duration_s = 10.0
+
 
     # Robot
     hand_init_pos: list = [0.0, 0.0, 0.06]  # Relative to fixed asset tip.
@@ -648,6 +657,7 @@ class ChairAssembly3(FactoryTask):
         hand_init_orn_noise: list = [0.0, 0.0, 0.0]
     elif task_idx == 4 or task_idx == 5:
         hand_init_pos: list = [0.0, 0.0, 0.28]
+
 
     # Fixed Asset (applies to all tasks)
     # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
@@ -686,7 +696,7 @@ class ChairAssembly3(FactoryTask):
             ),
             scale = np.array([1.0, 1.0, 1.0]), 
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                enabled_self_collisions=True,
+                enabled_self_collisions=False,
                 fix_root_link=True,  # add this so the fixed asset is set to have a fixed base
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass=fixed_asset_cfg.mass),
@@ -752,10 +762,10 @@ class ChairAssembly3(FactoryTask):
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
 
-    backrest: RigidObjectCfg = RigidObjectCfg(
-        prim_path="/World/envs/env_.*/Backrest",
+    rod: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Rod",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=backrest_asset_cfg.usd_path,
+            usd_path=rod_asset_cfg.usd_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
                 max_depenetration_velocity=5.0,
@@ -778,30 +788,27 @@ class ChairAssembly3(FactoryTask):
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.01, 0.09, 0.97), rot=(0.5, -0.5, 0.5, 0.5)),
     )
 
-
-
     connection_cfg1: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Plug1",
         pose_to_base = np.array(
-            [[-0.97, 0.0, 0.0, 0.01824],
+            [[-0.97, 0.0, 0.0, 0.0185],
             [0.24, 0.0, 1.0, 0.0373803],
-            [0.0, 1.0, 0.0, -0.45],
+            [0.0, 1.0, 0.0, -0.271],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
     )
-
 
     connection_cfg2: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Plug2",
         pose_to_base = np.array(
-            [[-0.97, 0.0, 0.0, 0.0179],
+            [[-0.97, 0.0, 0.0, 0.0185],
             [0.24, 0.0, 1.0, 0.0373803],
-            [0.0, 1.0, 0.0, -0.418],
+            [0.0, 1.0, 0.0, -0.249],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
@@ -810,29 +817,25 @@ class ChairAssembly3(FactoryTask):
     connection_cfg3: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/Backrest",
+        connector_path = "/World/envs/env_.*/Rod",
         pose_to_base = np.array(
-            [[0.0, 1.0, 0.0,  4.8889988e-03],
-            [ -1.0, 0.0,  0.0, 2.1893580e-01],
-            [0.0, -0.0,  1.0, -3.7405658e-01],
+            [[0.0, -1.0, 0.0,  2.4958238e-02],
+            [ -1.0, 0.0,  0.0,  2.2895001e-01],
+            [0.0, -0.0,  -1.0, -2.7744323e-01],
             [ 0.0,  0.0,  0.0,  1.0]]),
-        # pose_to_base = np.array(
-        #     [[0.0, 1.0, 0.0,  2.3256524e-02],
-        #     [ -1.0, 0.0,  0.0, 2.8873468e-02],
-        #     [0.0, -0.0,  1.0, -3.7360814e-01],
-        #     [ 0.0,  0.0,  0.0,  1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
     )
+
 
     connection_cfg4: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Plug1",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0, 0.018],
-            [0.0, 0.0, 1.0, 0.228],
-            [0.0, 1.0, 0.0, -0.45],
+            [[-0.97, 0.0, 0.0, 0.0182],
+            [0.24, 0.0, 1.0, 0.236],
+            [0.0, 1.0, 0.0, -0.27],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
@@ -843,9 +846,9 @@ class ChairAssembly3(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Plug2",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0, 0.018],
-            [0.0, 0.0, 1.0, 0.228],
-            [0.0, 1.0, 0.0, -0.417],
+            [[-0.97, 0.0, 0.0, 0.0186],
+            [0.24, 0.0, 1.0, 0.236],
+            [0.0, 1.0, 0.0, -0.247],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),

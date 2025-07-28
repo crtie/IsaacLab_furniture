@@ -117,9 +117,9 @@ def main():
         raise ValueError(f"Invalid file path: {urdf_path}")
     # create destination path
     dest_path = args_cli.output
+    print(f"Destination path: {dest_path}")
     if not os.path.isabs(dest_path):
         dest_path = os.path.abspath(dest_path)
-
     # Collision properties
     collision_props = schemas_cfg.CollisionPropertiesCfg(collision_enabled=args_cli.collision_approximation != "none")
 
