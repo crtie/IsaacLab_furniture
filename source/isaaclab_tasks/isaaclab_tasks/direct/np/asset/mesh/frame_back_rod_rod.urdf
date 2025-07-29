@@ -56,13 +56,13 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </collision>
     <inertial>
@@ -77,13 +77,13 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </collision>
     <inertial>
@@ -98,7 +98,7 @@
     <parent link="frame_re"/>
     <child link="plug1"/>
     <!-- Rotation matrix [[-1,0,0],[0,0,1],[0,1,0]] converted to RPY -->
-    <origin xyz="0.0174 0.228 -0.45" rpy="1.5708 0 3.1416"/>
+    <origin xyz="0.016 0.228 -0.448" rpy="1.5708 0 3.1416"/>
   </joint>
 
   <!-- Fixed joint connecting frame_re to second plug -->
@@ -106,7 +106,7 @@
     <parent link="frame_re"/>
     <child link="plug2"/>
     <!-- Rotation matrix [[-1,0,0],[0,0,1],[0,1,0]] converted to RPY -->
-    <origin xyz="0.0174 0.228 -0.417" rpy="1.5708 0 3.1416"/>
+    <origin xyz="0.016 0.228 -0.416" rpy="1.5708 0 3.1416"/>
   </joint>
 
   <!-- Rod link -->
@@ -135,13 +135,13 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </collision>
     <inertial>
@@ -156,13 +156,13 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </collision>
     <inertial>
@@ -177,13 +177,13 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </collision>
     <inertial>
@@ -198,13 +198,13 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
       </geometry>
     </collision>
     <inertial>
