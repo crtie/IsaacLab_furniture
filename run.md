@@ -138,3 +138,15 @@ TODO:
   /home/crtie/crtie/Manual2Skill2/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_back.urdf \
   /home/crtie/crtie/Manual2Skill2/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_back.usd \
   --collision-approximation sdf
+
+./isaaclab.sh -p scripts/tools/convert_urdf.py \
+  /home/crtie/crtie/Manual2Skill2/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_back_rod_rod.urdf \
+  /home/crtie/crtie/Manual2Skill2/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_back_rod_rod.usd \
+  --collision-approximation sdf
+
+./isaaclab.sh -p scripts/tools/convert_mesh.py \
+  /home/crtie/crtie/Manual2Skill2/chair_real/frame_mirror.obj \
+  /home/crtie/crtie/Manual2Skill2/chair_real/frame_mirror.usd \
+  --collision-approximation sdf \
+  --mass 0.01
+

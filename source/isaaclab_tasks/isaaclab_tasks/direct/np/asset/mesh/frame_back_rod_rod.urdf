@@ -1,0 +1,286 @@
+<?xml version="1.0"?>
+<!-- filepath: /home/crtie/crtie/Manual2Skill2/chair_real/frame_back.urdf -->
+<robot name="frame_back">
+  
+  <!-- Base link using frame_re.obj -->
+  <link name="frame_re">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="frame_re.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="frame_re.obj"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <!-- Backrest link using backrest.obj -->
+  <link name="backrest">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="backrest.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="backrest.obj"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <!-- Fixed joint connecting frame_re to backrest -->
+  <joint name="frame_to_backrest" type="fixed">
+    <parent link="frame_re"/>
+    <child link="backrest"/>
+    <origin xyz="0.02325 0.02887 -0.3736" rpy="0 0 1.5708"/>
+  </joint>
+
+  <!-- First plug link -->
+  <link name="plug1">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.1"/>
+      <inertia ixx="0.1" ixy="0.0" ixz="0.0" iyy="0.1" iyz="0.0" izz="0.1"/>
+    </inertial>
+  </link>
+
+  <!-- Second plug link -->
+  <link name="plug2">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.1"/>
+      <inertia ixx="0.1" ixy="0.0" ixz="0.0" iyy="0.1" iyz="0.0" izz="0.1"/>
+    </inertial>
+  </link>
+
+  <!-- Fixed joint connecting frame_re to first plug -->
+  <joint name="frame_to_plug1" type="fixed">
+    <parent link="frame_re"/>
+    <child link="plug1"/>
+    <!-- Rotation matrix [[-1,0,0],[0,0,1],[0,1,0]] converted to RPY -->
+    <origin xyz="0.0174 0.228 -0.45" rpy="1.5708 0 3.1416"/>
+  </joint>
+
+  <!-- Fixed joint connecting frame_re to second plug -->
+  <joint name="frame_to_plug2" type="fixed">
+    <parent link="frame_re"/>
+    <child link="plug2"/>
+    <!-- Rotation matrix [[-1,0,0],[0,0,1],[0,1,0]] converted to RPY -->
+    <origin xyz="0.0174 0.228 -0.417" rpy="1.5708 0 3.1416"/>
+  </joint>
+
+  <!-- Rod link -->
+  <link name="rod">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="rod.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="rod.obj"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.5" ixy="0.0" ixz="0.0" iyy="0.5" iyz="0.0" izz="0.5"/>
+    </inertial>
+  </link>
+
+  <!-- Third plug link -->
+  <link name="plug3">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.1"/>
+      <inertia ixx="0.1" ixy="0.0" ixz="0.0" iyy="0.1" iyz="0.0" izz="0.1"/>
+    </inertial>
+  </link>
+
+  <!-- Fourth plug link -->
+  <link name="plug4">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.1"/>
+      <inertia ixx="0.1" ixy="0.0" ixz="0.0" iyy="0.1" iyz="0.0" izz="0.1"/>
+    </inertial>
+  </link>
+
+  <!-- Fifth plug link -->
+  <link name="plug5">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.1"/>
+      <inertia ixx="0.1" ixy="0.0" ixz="0.0" iyy="0.1" iyz="0.0" izz="0.1"/>
+    </inertial>
+  </link>
+
+  <!-- Sixth plug link -->
+  <link name="plug6">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="plug.obj" scale="0.75 0.75 0.75"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.1"/>
+      <inertia ixx="0.1" ixy="0.0" ixz="0.0" iyy="0.1" iyz="0.0" izz="0.1"/>
+    </inertial>
+  </link>
+
+  <!-- Fixed joint connecting frame_re to rod -->
+  <joint name="frame_to_rod" type="fixed">
+    <parent link="frame_re"/>
+    <child link="rod"/>
+    <!-- Rotation matrix [[0,-1,0],[-1,0,0],[0,0,-1]] converted to RPY -->
+    <origin xyz="0.2815792 0.22109781 -0.27506271" rpy="3.1416 0 -1.5708"/>
+  </joint>
+
+  <!-- Fixed joint connecting frame_re to third plug -->
+  <joint name="frame_to_plug3" type="fixed">
+    <parent link="frame_re"/>
+    <child link="plug3"/>
+    <!-- Rotation matrix [[-1,0,0],[0,0,1],[0,1,0]] converted to RPY -->
+    <origin xyz="0.274 0.228 -0.268" rpy="1.5708 0 3.1416"/>
+  </joint>
+
+  <!-- Fixed joint connecting frame_re to fourth plug -->
+  <joint name="frame_to_plug4" type="fixed">
+    <parent link="frame_re"/>
+    <child link="plug4"/>
+    <!-- Rotation matrix [[-1,0,0],[0,0,1],[0,1,0]] converted to RPY -->
+    <origin xyz="0.274 0.228 -0.244" rpy="1.5708 0 3.1416"/>
+  </joint>
+
+  <!-- Fifth rod link -->
+  <link name="rod2">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="rod.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="rod.obj"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.5" ixy="0.0" ixz="0.0" iyy="0.5" iyz="0.0" izz="0.5"/>
+    </inertial>
+  </link>
+
+  <!-- Fixed joint connecting frame_re to second rod -->
+  <joint name="frame_to_rod2" type="fixed">
+    <parent link="frame_re"/>
+    <child link="rod2"/>
+    <!-- Rotation matrix [[0,-1,0],[-1,0,0],[0,0,-1]] converted to RPY -->
+    <origin xyz="0.02496 0.22095 -0.27744" rpy="3.1416 0 -1.5708"/>
+  </joint>
+
+  <!-- Fixed joint connecting frame_re to fifth plug -->
+  <joint name="frame_to_plug5" type="fixed">
+    <parent link="frame_re"/>
+    <child link="plug5"/>
+    <!-- Rotation matrix [[-0.97,0,0],[0.24,0,1],[0,1,0]] converted to RPY -->
+    <origin xyz="0.0182 0.228 -0.27" rpy="1.5708 0 3.1416"/>
+  </joint>
+
+  <!-- Fixed joint connecting frame_re to sixth plug -->
+  <joint name="frame_to_plug6" type="fixed">
+    <parent link="frame_re"/>
+    <child link="plug6"/>
+    <!-- Rotation matrix [[-0.97,0,0],[0.24,0,1],[0,1,0]] converted to RPY -->
+    <origin xyz="0.0182 0.228 -0.246" rpy="1.5708 0 3.1416"/>
+  </joint>
+
+</robot>

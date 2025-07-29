@@ -121,11 +121,26 @@ class ChairFrameBackRod(FixedAssetCfg):
     mass = 0.05
     base_height = 0.0
 
+@configclass
+class ChairFrameBackRodRod(FixedAssetCfg):
+    usd_path = f"{CHAIR_ASSET_DIR}/mesh/frame_back_rod_rod.usd"
+    diameter = 0.0081
+    height = 0.025
+    mass = 0.05
+    base_height = 0.0
+
+
+@configclass
+class Frame(HeldAssetCfg):
+    usd_path = f"{CHAIR_ASSET_DIR}/frame_mirror.usd"
+    diameter = 0.03
+    height = -0.01
+    mass = 0.01
+    base_height = 0.0
 
 @configclass
 class Plug(HeldAssetCfg):
     usd_path = f"{CHAIR_ASSET_DIR}/plug.usd"
-    # usd_path = f"{CHAIR_ASSET_DIR}/screw_ree2.usd"
     diameter = 0.007986
     height = 0.01
     mass = 0.001  # Mass is set to 0.001 to avoid large forces during insertion.
@@ -624,6 +639,8 @@ class ChairAssembly2(FactoryTask):
 
 @configclass
 class ChairAssembly3(FactoryTask):
+
+
     #! crtie: task_idx is used to identify the task in the environment.
     #! crtie: task 1 is "insert the first plug into the first hole",
     #! crtie: task 2 is "insert the second plug into the second hole",
@@ -786,6 +803,172 @@ class ChairAssembly3(FactoryTask):
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-3, rest_offset=5e-3),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.01, 0.09, 0.97), rot=(0.5, -0.5, 0.5, 0.5)),
+    )
+
+    connection_cfg1: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/Plug1",
+        pose_to_base = np.array(
+            [[-0.97, 0.0, 0.0, 0.0185],
+            [0.24, 0.0, 1.0, 0.0373803],
+            [0.0, 1.0, 0.0, -0.271],
+            [0.0, 0.0, 0.0, 1.0]]),
+        axis_r = np.array([0.0, 1.0, 0.0]),
+        axis_t = np.array([0.0, 1.0, 0.0]),
+    )
+
+    connection_cfg2: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/Plug2",
+        pose_to_base = np.array(
+            [[-0.97, 0.0, 0.0, 0.0185],
+            [0.24, 0.0, 1.0, 0.0373803],
+            [0.0, 1.0, 0.0, -0.249],
+            [0.0, 0.0, 0.0, 1.0]]),
+        axis_r = np.array([0.0, 1.0, 0.0]),
+        axis_t = np.array([0.0, 1.0, 0.0]),
+    )
+
+    connection_cfg3: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/Rod",
+        pose_to_base = np.array(
+            [[0.0, -1.0, 0.0,  2.4958238e-02],
+            [ -1.0, 0.0,  0.0,  2.2895001e-01],
+            [0.0, -0.0,  -1.0, -2.7744323e-01],
+            [ 0.0,  0.0,  0.0,  1.0]]),
+        axis_r = np.array([0.0, 1.0, 0.0]),
+        axis_t = np.array([0.0, 1.0, 0.0]),
+    )
+
+
+    connection_cfg4: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/Plug1",
+        pose_to_base = np.array(
+            [[-0.97, 0.0, 0.0, 0.0182],
+            [0.24, 0.0, 1.0, 0.236],
+            [0.0, 1.0, 0.0, -0.27],
+            [0.0, 0.0, 0.0, 1.0]]),
+        axis_r = np.array([0.0, 1.0, 0.0]),
+        axis_t = np.array([0.0, 1.0, 0.0]),
+    )
+
+    connection_cfg5: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/Plug2",
+        pose_to_base = np.array(
+            [[-0.97, 0.0, 0.0, 0.0186],
+            [0.24, 0.0, 1.0, 0.236],
+            [0.0, 1.0, 0.0, -0.247],
+            [0.0, 0.0, 0.0, 1.0]]),
+        axis_r = np.array([0.0, 1.0, 0.0]),
+        axis_t = np.array([0.0, 1.0, 0.0]),
+    )
+
+
+
+@configclass
+class ChairAssembly4(FactoryTask):
+    task_idx = 1
+
+
+    name = "chair_assembly"
+    fixed_asset_cfg = ChairFrameBackRodRod()
+    held_asset_cfg = Frame()
+    frame_config = Frame()
+    asset_size = 8.0
+    duration_s = 10.0
+
+
+    # Robot
+    hand_init_pos_noise: list = [0.02, 0.02, 0.01]
+    hand_init_pos: list = [0.0, 0.0, 0.3]  # Relative to fixed asset tip.
+    hand_init_orn: list = [3.1416, 0.0, 0.0]  # For the rod insertion task, the hand is oriented towards the rod.
+    hand_init_orn_noise: list = [0.0, 0.0, 0.0]
+
+
+
+    # Fixed Asset (applies to all tasks)
+    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
+    fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
+    fixed_asset_init_orn_deg: float = 0.0
+    fixed_asset_init_orn_range_deg: float = 360.0
+
+    # Held Asset (applies to all tasks)
+    held_asset_pos_noise: list = [0.003, 0.0, 0.003]  # noise level of the held asset in gripper
+    held_asset_rot_init: float = 0.0
+
+    # Rewards
+    keypoint_coef_baseline: list = [5, 4]
+    keypoint_coef_coarse: list = [50, 2]
+    keypoint_coef_fine: list = [100, 0]
+    # Fraction of socket height.
+    success_threshold: float = 0.04
+    engage_threshold: float = 0.9
+
+    fixed_asset: ArticulationCfg = ArticulationCfg(
+        prim_path="/World/envs/env_.*/FixedAsset",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=fixed_asset_cfg.usd_path,
+            activate_contact_sensors=True,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                max_depenetration_velocity=5.0,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_linear_velocity=1000.0,
+                max_angular_velocity=3666.0,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=192,
+                solver_velocity_iteration_count=1,
+                max_contact_impulse=1e32,
+            ),
+            scale = np.array([1.0, 1.0, 1.0]), 
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                enabled_self_collisions=False,
+                fix_root_link=True,  # add this so the fixed asset is set to have a fixed base
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass=fixed_asset_cfg.mass),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-3, rest_offset=5e-3),
+        ),
+
+        init_state=ArticulationCfg.InitialStateCfg(
+            pos=(-0.16, -0.3, 0.74), rot=(0.707, 0.707, 0.0, 0.0), joint_pos={}, joint_vel={}
+        ),
+        actuators={},
+    )
+
+
+    frame: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Frame",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=frame_config.usd_path,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                max_depenetration_velocity=5.0,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_linear_velocity=1000.0,
+                max_angular_velocity=3666.0,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=192,
+                solver_velocity_iteration_count=1, 
+                max_contact_impulse=1e32,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
+            scale = np.array([1.0,1.0,1.0]), 
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                articulation_enabled=False,  # Set to False for RigidObject
+            ),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.12, -0.30, 1.02), rot=(0.0, 0.0, -0.707, 0.707)),
     )
 
     connection_cfg1: ConnectionCfg = ConnectionCfg(
