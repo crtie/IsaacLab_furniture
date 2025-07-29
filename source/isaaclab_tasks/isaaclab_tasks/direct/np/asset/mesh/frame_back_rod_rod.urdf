@@ -62,7 +62,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
+        <mesh filename="plug.obj" scale="0.4 0.4 0.75"/>
       </geometry>
     </collision>
     <inertial>
@@ -83,7 +83,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
+        <mesh filename="plug.obj" scale="0.4 0.4 0.75"/>
       </geometry>
     </collision>
     <inertial>
@@ -141,7 +141,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
+        <mesh filename="plug.obj" scale="0.4 0.4 0.75"/>
       </geometry>
     </collision>
     <inertial>
@@ -162,7 +162,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
+        <mesh filename="plug.obj" scale="0.4 0.4 0.75"/>
       </geometry>
     </collision>
     <inertial>
@@ -183,7 +183,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
+        <mesh filename="plug.obj" scale="0.4 0.4 0.75"/>
       </geometry>
     </collision>
     <inertial>
@@ -204,7 +204,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="plug.obj" scale="0.6 0.6 0.75"/>
+        <mesh filename="plug.obj" scale="0.4 0.4 0.75"/>
       </geometry>
     </collision>
     <inertial>

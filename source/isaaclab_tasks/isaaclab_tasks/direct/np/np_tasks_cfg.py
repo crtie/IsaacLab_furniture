@@ -974,65 +974,13 @@ class ChairAssembly4(FactoryTask):
     connection_cfg1: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/Plug1",
+        connector_path = "/World/envs/env_.*/Frame",
         pose_to_base = np.array(
-            [[-0.97, 0.0, 0.0, 0.0185],
-            [0.24, 0.0, 1.0, 0.0373803],
-            [0.0, 1.0, 0.0, -0.271],
+            [[-1.0, 0.0, 0.0, 2.8771558e-01],
+            [0.0, -1.0, 0.0, 2.5098464e-01],
+            [0.0, 0.0, 1.0, -5.1539927e-04],
             [0.0, 0.0, 0.0, 1.0]]),
-        axis_r = np.array([0.0, 1.0, 0.0]),
+        axis_r = None,
         axis_t = np.array([0.0, 1.0, 0.0]),
     )
 
-    connection_cfg2: ConnectionCfg = ConnectionCfg(
-        connection_type = "plug_connection",
-        base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/Plug2",
-        pose_to_base = np.array(
-            [[-0.97, 0.0, 0.0, 0.0185],
-            [0.24, 0.0, 1.0, 0.0373803],
-            [0.0, 1.0, 0.0, -0.249],
-            [0.0, 0.0, 0.0, 1.0]]),
-        axis_r = np.array([0.0, 1.0, 0.0]),
-        axis_t = np.array([0.0, 1.0, 0.0]),
-    )
-
-    connection_cfg3: ConnectionCfg = ConnectionCfg(
-        connection_type = "plug_connection",
-        base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/Rod",
-        pose_to_base = np.array(
-            [[0.0, -1.0, 0.0,  2.4958238e-02],
-            [ -1.0, 0.0,  0.0,  2.2895001e-01],
-            [0.0, -0.0,  -1.0, -2.7744323e-01],
-            [ 0.0,  0.0,  0.0,  1.0]]),
-        axis_r = np.array([0.0, 1.0, 0.0]),
-        axis_t = np.array([0.0, 1.0, 0.0]),
-    )
-
-
-    connection_cfg4: ConnectionCfg = ConnectionCfg(
-        connection_type = "plug_connection",
-        base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/Plug1",
-        pose_to_base = np.array(
-            [[-0.97, 0.0, 0.0, 0.0182],
-            [0.24, 0.0, 1.0, 0.236],
-            [0.0, 1.0, 0.0, -0.27],
-            [0.0, 0.0, 0.0, 1.0]]),
-        axis_r = np.array([0.0, 1.0, 0.0]),
-        axis_t = np.array([0.0, 1.0, 0.0]),
-    )
-
-    connection_cfg5: ConnectionCfg = ConnectionCfg(
-        connection_type = "plug_connection",
-        base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/Plug2",
-        pose_to_base = np.array(
-            [[-0.97, 0.0, 0.0, 0.0186],
-            [0.24, 0.0, 1.0, 0.236],
-            [0.0, 1.0, 0.0, -0.247],
-            [0.0, 0.0, 0.0, 1.0]]),
-        axis_r = np.array([0.0, 1.0, 0.0]),
-        axis_t = np.array([0.0, 1.0, 0.0]),
-    )

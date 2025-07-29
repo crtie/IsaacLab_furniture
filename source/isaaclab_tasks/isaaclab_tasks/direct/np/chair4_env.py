@@ -332,26 +332,10 @@ class FrankaChair4Env(DirectRLEnv):
         from omni.physx.scripts import utils
         import omni.usd
         stage = omni.usd.get_context().get_stage()
-        if connection_idx == 1:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
-            joint_path = "/World/envs/env_0/FixedJoint1"
-            connection_cfg = self.cfg_task.connection_cfg1
-        elif connection_idx == 2:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
-            joint_path = "/World/envs/env_0/FixedJoint2"
-            connection_cfg = self.cfg_task.connection_cfg2
-        elif connection_idx == 3:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Rod")
-            joint_path = "/World/envs/env_0/FixedJoint3"
-            connection_cfg = self.cfg_task.connection_cfg3
-        elif connection_idx == 4:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
-            joint_path = "/World/envs/env_0/FixedJoint4"
-            connection_cfg = self.cfg_task.connection_cfg4
-        elif connection_idx == 5:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
-            joint_path = "/World/envs/env_0/FixedJoint5"
-            connection_cfg = self.cfg_task.connection_cfg5
+        held_prim = stage.GetPrimAtPath("/World/envs/env_0/Frame")
+        joint_path = "/World/envs/env_0/FixedJoint1"
+        connection_cfg = self.cfg_task.connection_cfg1
+
 
 
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
@@ -755,7 +739,7 @@ class FrankaChair4Env(DirectRLEnv):
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
             held_asset_relative_pos[:, 2] = self.cfg_task.frame_config.height
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
-            held_asset_relative_pos[:, 0] += 0.19
+            held_asset_relative_pos[:, 0] += 0.15
             held_asset_relative_pos[:, 1] -= 0.255
         else:
             raise NotImplementedError("Task not implemented")
@@ -842,7 +826,7 @@ class FrankaChair4Env(DirectRLEnv):
             rela_trans = fixed_tip_pos.clone()
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
             rela_trans[:, 1] += 0.28
-            rela_trans[:, 0] += 0.1
+            rela_trans[:, 0] += 0.14
 
         # (2) Move gripper to randomizes location above fixed asset. Keep trying until IK succeeds.
         # (a) get position vector to target
