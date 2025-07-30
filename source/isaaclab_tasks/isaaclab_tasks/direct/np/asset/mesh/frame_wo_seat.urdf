@@ -1,0 +1,140 @@
+<?xml version="1.0"?>
+<robot name="frame_back">
+  
+  <!-- Base link using frame_re.obj -->
+  <link name="frame_re">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="frame_re.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="frame_re.obj"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <!-- Backrest link using backrest.obj -->
+  <link name="backrest">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="backrest.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="backrest.obj"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <!-- Fixed joint connecting frame_re to backrest -->
+  <joint name="frame_to_backrest" type="fixed">
+    <parent link="frame_re"/>
+    <child link="backrest"/>
+    <origin xyz="0.02325 0.031 -0.3736" rpy="0 0 1.5708"/>
+  </joint>
+
+  <!-- Rod link -->
+  <link name="rod">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="rod.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="rod.obj"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.5" ixy="0.0" ixz="0.0" iyy="0.5" iyz="0.0" izz="0.5"/>
+    </inertial>
+  </link>
+
+  <!-- Fixed joint connecting frame_re to rod -->
+  <joint name="frame_to_rod" type="fixed">
+    <parent link="frame_re"/>
+    <child link="rod"/>
+    <!-- Rotation matrix [[0,-1,0],[-1,0,0],[0,0,-1]] converted to RPY -->
+    <origin xyz="0.2815792 0.22109781 -0.27506271" rpy="3.1416 0 -1.5708"/>
+  </joint>
+
+  <!-- Second rod link -->
+  <link name="rod2">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="rod.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="rod.obj"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.5" ixy="0.0" ixz="0.0" iyy="0.5" iyz="0.0" izz="0.5"/>
+    </inertial>
+  </link>
+
+  <!-- Fixed joint connecting frame_re to second rod -->
+  <joint name="frame_to_rod2" type="fixed">
+    <parent link="frame_re"/>
+    <child link="rod2"/>
+    <!-- Rotation matrix [[0,-1,0],[-1,0,0],[0,0,-1]] converted to RPY -->
+    <origin xyz="0.02496 0.22095 -0.27744" rpy="3.1416 0 -1.5708"/>
+  </joint>
+
+  <!-- Frame mirror link -->
+  <link name="frame_mirror">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="frame_mirror.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="frame_mirror.obj"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <!-- Fixed joint connecting frame_re to frame_mirror -->
+  <joint name="frame_to_frame_mirror" type="fixed">
+    <parent link="frame_re"/>
+    <child link="frame_mirror"/>
+    <!-- Rotation matrix [[-1,0,0],[0,-1,0],[0,0,1]] converted to RPY -->
+    <origin xyz="0.28772 0.25098 -0.00052" rpy="0 0 3.1416"/>
+  </joint>
+
+</robot>

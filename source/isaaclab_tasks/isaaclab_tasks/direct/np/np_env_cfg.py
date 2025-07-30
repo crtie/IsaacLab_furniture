@@ -12,7 +12,7 @@ from isaaclab.sim import PhysxCfg, SimulationCfg
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
 from isaaclab.utils import configclass
 
-from .np_tasks_cfg import ASSET_DIR, FactoryTask, ChairAssembly1, ChairAssembly2, ChairAssembly3, ChairAssembly4
+from .np_tasks_cfg import ASSET_DIR, FactoryTask, ChairAssembly1, ChairAssembly2, ChairAssembly3, ChairAssembly4, ChairAssembly5
 
 OBS_DIM_CFG = {
     "fingertip_pos": 3,
@@ -212,4 +212,10 @@ class FrankaChair3Cfg(FactoryEnvCfg):
 class FrankaChair4Cfg(FactoryEnvCfg):
     task_name = "chair_assembly4"
     task = ChairAssembly4()
+    episode_length_s = 30.0
+
+@configclass
+class FrankaChair5Cfg(FactoryEnvCfg):
+    task_name = "chair_assembly5"
+    task = ChairAssembly5()
     episode_length_s = 30.0
