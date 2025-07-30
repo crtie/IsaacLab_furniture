@@ -10,7 +10,7 @@ from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 import numpy as np
 
 ASSET_DIR = f"{ISAACLAB_NUCLEUS_DIR}/Factory"
-CHAIR_ASSET_DIR = "source/isaaclab_tasks/isaaclab_tasks/direct/np/asset"
+CHAIR_ASSET_DIR = "/home/yudi/Singapore/isaacsim/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset"
 
 @configclass
 class FixedAssetCfg:
@@ -156,7 +156,7 @@ class ChairAssembly(FactoryTask):
     #! crtie: task 2 is "insert the second plug into the second hole",
     #! crtie: task 3 is "insert the rod into the frame via the plug",
     #! crtie: task 4 is "rotate the screw into the frame ".
-    task_idx = 4
+    task_idx = 1
 
 
     name = "chair_assembly"

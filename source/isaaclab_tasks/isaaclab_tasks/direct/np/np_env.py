@@ -33,6 +33,8 @@ class FrankaChairEnv(DirectRLEnv):
     cfg: FrankaChairCfg
 
     def __init__(self, cfg: FrankaChairCfg, render_mode: str | None = None, **kwargs):
+        self.print_counter = 0  # 用于控制打印频率
+
         # Update number of obs/states
         cfg.observation_space = sum([OBS_DIM_CFG[obs] for obs in cfg.obs_order])
         cfg.state_space = sum([STATE_DIM_CFG[state] for state in cfg.state_order])
@@ -120,6 +122,10 @@ class FrankaChairEnv(DirectRLEnv):
         self.left_finger_body_idx = self._robot.body_names.index("panda_leftfinger")
         self.right_finger_body_idx = self._robot.body_names.index("panda_rightfinger")
         self.fingertip_body_idx = self._robot.body_names.index("panda_fingertip_centered")
+
+        # 新增：左右指力传感器读数缓存
+        self.left_finger_force = torch.zeros((self.num_envs, 3), device=self.device)
+        self.right_finger_force = torch.zeros_like(self.left_finger_force)
 
         # Tensors for finite-differencing.
         self.last_update_timestamp = 0.0  # Note: This is for finite differencing body velocities.
@@ -235,6 +241,29 @@ class FrankaChairEnv(DirectRLEnv):
         self.arm_mass_matrix = self._robot.root_physx_view.get_generalized_mass_matrices()[:, 0:7, 0:7]
         self.joint_pos = self._robot.data.joint_pos.clone()
         self.joint_vel = self._robot.data.joint_vel.clone()
+
+        # -------- 新增：读取并打印夹爪力传感器 --------
+        incoming_force = self._robot.root_physx_view.get_link_incoming_joint_force()
+        self.left_finger_force = incoming_force[:, self.left_finger_body_idx, 0:3]
+        self.right_finger_force = incoming_force[:, self.right_finger_body_idx, 0:3]
+
+        # 打印 env 0 的三维力（牛顿）
+        # print(
+        #     f"Gripper force (env0) -> "
+        #     f"L:{self.left_finger_force[0].cpu().numpy()}, "
+        #     f"R:{self.right_finger_force[0].cpu().numpy()}"
+        # )
+        self.print_counter += 1
+        if self.print_counter % 50 == 0:  # 每 50 步打印一次
+            print(
+                f"Gripper force (env0) -> "
+                f"L:{self.left_finger_force[0].cpu().numpy()}, "
+                f"R:{self.right_finger_force[0].cpu().numpy()}"
+            )
+            pos = self.fingertip_midpoint_pos[0].cpu().numpy()
+            quat = self.fingertip_midpoint_quat[0].cpu().numpy()
+            print(f"[DEBUG] Gripper pos: {pos}, quat: {quat}")
+        # -------- 新增结束 ----------------------------
 
         # Finite-differencing results in more reliable velocity estimates.
         self.ee_linvel_fd = (self.fingertip_midpoint_pos - self.prev_fingertip_pos) / dt
@@ -503,12 +532,15 @@ class FrankaChairEnv(DirectRLEnv):
         gt_real_mat = self._connection_cfg.pose_to_base
 
         R_dist, R_axis, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
-        print("rel_mat:", rel_mat)
+        # print("rel_mat:", rel_mat)
+
         # print("gt_real_mat:", gt_real_mat)
         # bp()
-        print("R_dist:", R_dist)
-        print("t_tangent:", t_tangent)
-        print("t_normal:", t_normal)
+
+        # print("R_dist:", R_dist)
+        # print("t_tangent:", t_tangent)
+        # print("t_normal:", t_normal)
+
         # print("joint names of frame:",self._fixed_asset.joint_names)
         if not self.joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.005:
             if self.cfg_task.task_idx == 4:
@@ -526,26 +558,26 @@ class FrankaChairEnv(DirectRLEnv):
         elif self.joint_created :
             print("Fixed joint already created.")
         else:
-            print("Not creating fixed joint yet, waiting for conditions to be met.")
+            # print("Not creating fixed joint yet, waiting for conditions to be met.")
+            pass
 
     def _sync_held_asset(self):
-        # 1. 获取当前相对位姿和目标相对位姿
-        rel_mat = self._get_real_mat()  # 当前 held 相对 fixed 的4x4矩阵
-        gt_real_mat = self._connection_cfg.pose_to_base  # 目标相对位姿
+        rel_mat = self._get_real_mat()  
+        gt_real_mat = self._connection_cfg.pose_to_base 
 
         R_dist, R_axis, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
-        delta_theta = R_axis - self.R_axis  # 计算旋转轴的变化量
+        delta_theta = R_axis - self.R_axis  
 
-        # 5. 根据螺距 pitch 计算z方向的位移
-        pitch = getattr(self._connection_cfg, "pitch", 0.5)  # 螺距，单位：米/弧度
-        dz = float(delta_theta * pitch)  # 螺旋升降量
-        print("dz:", dz)
+
+        pitch = getattr(self._connection_cfg, "pitch", 0.5)  
+        dz = float(delta_theta * pitch) 
+        # print("dz:", dz)
         if abs(dz) >0.1:
             print("triggering joint limit1")
             prim = self.fixed_joint_prim
             limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
-            limit_api.CreateLowAttr(-0.005)
-            limit_api.CreateHighAttr(0.005)
+            limit_api.CreateLowAttr(-0.004)
+            limit_api.CreateHighAttr(0.004)
         if abs(dz) > 0.15:
             print("triggering joint limit2")
             prim = self.fixed_joint_prim
@@ -553,22 +585,582 @@ class FrankaChairEnv(DirectRLEnv):
             limit_api.CreateLowAttr(-0.01)
             limit_api.CreateHighAttr(0.01)
 
+    
+    
+    def process_force_for_dev_experiment(self):
+        """
+        开发实验模式:
+        阶段 1: gripper 仅向下运动，检测 Z 坐标连续 1s 稳定后切换阶段。
+        阶段 2: 以接触点为圆心，半径从 0 开始逐渐增大做圆周运动，持续向下施加力。
+        阶段 3: 一旦检测到孔洞，停止在孔洞位置。
+        """
+        # 取 env 0 左右指的力
+        left_force = self.left_finger_force[0]
+        right_force = self.right_finger_force[0]
+        combined_force = left_force + right_force
+        force_x = combined_force[0].item()
+        force_y = combined_force[1].item()
+        force_z = combined_force[2].item()
+
+        # 当前末端执行器的 z 坐标
+        z_pos = self.fingertip_midpoint_pos[0, 2].item()
+        x_pos = self.fingertip_midpoint_pos[0, 0].item()
+        y_pos = self.fingertip_midpoint_pos[0, 1].item()
+
+
+
+        file_path = "./my/force_xyz.txt"
+
+
+        try:
+            with open(file_path, "a") as f:
+                f.write(f"{force_x} \t{force_y} \t{force_z} \t{z_pos} \t{x_pos} \t{y_pos}\n")
+        except Exception as e:
+            print(f"[DevForce] Warning: failed to log force_z ({e})")
+
+
+
+        if not hasattr(self, "dev_phase"):
+            self.dev_phase = "descending"
+            self.prev_z = z_pos
+            self._elapsed_time = 0.0
+            self.z_history = []
+            self.force_history = []
+            self.contact_xy = None
+            self.circle_radius = 0.001
+            self.circle_angle = 0.0
+            self.radius_increment = 0.002
+
+            current_quat = self.fingertip_midpoint_quat[0]
+            pitch = np.deg2rad(-20.0)
+            rot_offset = torch.tensor(
+                [np.cos(pitch/2), 0.0, np.sin(pitch/2), 0.0],
+                dtype=torch.float32, device=self.device
+            )
+            self.dev_target_quat = torch_utils.quat_mul(rot_offset.unsqueeze(0), current_quat.unsqueeze(0))[0]
+
+        dt = self.sim.get_physics_dt()
+        self._elapsed_time += dt
+        window_len = int(1.0 / dt)
+
+        if self.print_counter % 50 == 0:
+            print(f"[DevForce] phase={self.dev_phase}, "
+                f"force=({force_x:.2f},{force_y:.2f},{force_z:.2f}), z={z_pos:.3f}")
+
+        self.ctrl_target_fingertip_midpoint_quat[:] = self.dev_target_quat
+
+        if self.dev_phase == "descending":
+            self.ctrl_target_fingertip_midpoint_pos[:, :] = self.fingertip_midpoint_pos
+            self.ctrl_target_fingertip_midpoint_pos[:, 2] -= 0.001  
+
+            self.z_history.append(z_pos)
+            if len(self.z_history) > window_len:
+                self.z_history.pop(0)
+
+            if len(self.z_history) == window_len:
+                z_min = min(self.z_history)
+                z_max = max(self.z_history)
+                if (z_max - z_min) < 0.0002:
+                    print("[DevForce] Z stable for 1s, switch to circle mode.")
+                    self.dev_phase = "circle"
+                    self.contact_xy = self.fingertip_midpoint_pos[0, :2].clone()
+                    self.z_history.clear()
+                    self.force_history.clear()
+                    self.circle_radius = 0.001
+                    self.circle_angle = 0.0
+                    self.prev_z = z_pos
+
+        # --------------- 第二阶段: 圆周运动 ----------------
+        # elif self.dev_phase == "circle":
+        #     angular_speed = 2 * np.pi * 0.3
+        #     self.circle_angle += angular_speed * dt
+        #     if self.circle_angle >= 2 * np.pi:
+        #         self.circle_angle -= 2 * np.pi
+        #         self.circle_radius += self.radius_increment
+        #         print(f"[DevForce] Radius increased to {self.circle_radius:.3f} m")
+
+        #     dx = self.circle_radius * np.cos(self.circle_angle)
+        #     dy = self.circle_radius * np.sin(self.circle_angle)
+
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 0] = self.contact_xy[0] + dx
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 1] = self.contact_xy[1] + dy
+        #     # 圆周运动中保持向下施力
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.fingertip_midpoint_pos[0, 2] - 0.001
+
+        #     # 判断 hole 条件：force_z 再次小于 -5，表示掉入孔洞
+        #     # if force_z < -5.0:
+        #     #     print("[DevForce] Hole detected (force_z dropped), stopping.")
+        #     #     self.dev_phase = "stop"
+
+        #     self.prev_z = z_pos
+
+        # # z字扫描，OK
+        # elif self.dev_phase == "circle":
+        #     # 参数
+        #     step_speed = 0.03           # 扫描速度 (m/s)
+        #     square_half_size = 0.01     # 正方形半边长（扫描范围）
+        #     line_spacing = -0.005        # 每次换行的间距
+
+        #     # 初始化一次
+        #     if not hasattr(self, "scan_state"):
+        #         self.scan_state = "forward"
+        #         self.scan_progress = 0.0
+        #         self.scan_x_offset = 0.0  # 当前扫描的 X 偏移
+
+        #     # 扫描进度
+        #     self.scan_progress += step_speed * dt
+
+        #     # 当前扫描长度
+        #     scan_length = square_half_size
+
+        #     if self.scan_state == "forward":
+        #         # 从中心向 +Y 扫描
+        #         y_offset = min(self.scan_progress, scan_length)
+        #         self.ctrl_target_fingertip_midpoint_pos[:, 1] = self.contact_xy[1] + y_offset
+        #         self.ctrl_target_fingertip_midpoint_pos[:, 0] = self.contact_xy[0] + self.scan_x_offset
+
+        #         if self.scan_progress >= scan_length:
+        #             self.scan_state = "return_center_from_forward"
+        #             self.scan_progress = 0.0
+
+        #     elif self.scan_state == "return_center_from_forward":
+        #         # 从 +Y 回到中心
+        #         y_offset = scan_length - min(self.scan_progress, scan_length)
+        #         self.ctrl_target_fingertip_midpoint_pos[:, 1] = self.contact_xy[1] + y_offset
+        #         self.ctrl_target_fingertip_midpoint_pos[:, 0] = self.contact_xy[0] + self.scan_x_offset
+
+        #         if self.scan_progress >= scan_length:
+        #             self.scan_state = "backward"
+
+        #             self.scan_progress = 0.0
+
+        #     elif self.scan_state == "backward":
+        #         # 从中心向 -Y 扫描
+        #         y_offset = -min(self.scan_progress, scan_length)
+        #         self.ctrl_target_fingertip_midpoint_pos[:, 1] = self.contact_xy[1] + y_offset
+        #         self.ctrl_target_fingertip_midpoint_pos[:, 0] = self.contact_xy[0] + self.scan_x_offset
+
+        #         if self.scan_progress >= scan_length:
+        #             self.scan_state = "return_center_from_backward"
+        #             self.scan_progress = 0.0
+
+        #     elif self.scan_state == "return_center_from_backward":
+        #         # 从 -Y 回到中心
+        #         y_offset = -scan_length + min(self.scan_progress, scan_length)
+        #         self.ctrl_target_fingertip_midpoint_pos[:, 1] = self.contact_xy[1] + y_offset
+        #         self.ctrl_target_fingertip_midpoint_pos[:, 0] = self.contact_xy[0] + self.scan_x_offset
+
+        #         if self.scan_progress >= scan_length:
+        #             # 一条完整的正负扫描完成，换下一条线（X方向偏移）
+        #             self.scan_x_offset += line_spacing
+        #             self.scan_progress = 0.0
+        #             if self.scan_x_offset > square_half_size:
+        #                 print("[DevForce] Finished scanning entire square.")
+        #                 self.scan_x_offset = 0.0
+        #             self.scan_state = "forward"
+
+        #     # 保持下压力
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.fingertip_midpoint_pos[0, 2] - 0.001
+
+        #     # 可选: hole检测
+        #     # if force_z < -5.0:
+        #     #     print("[DevForce] Hole detected (force_z dropped), stopping.")
+        #     #     self.dev_phase = "stop"
+
+        #     self.prev_z = z_pos
+
+        # ##检测到hole立刻停止
+        # elif self.dev_phase == "circle":
+        #     # 参数
+        #     step_speed = -0.004        # 沿 X 方向前进速度 (m/s)
+        #     wave_amplitude = 0.01    # 正弦波在 Y 方向的摆幅
+        #     wave_length = 0.004       # 每个波周期的长度（X 方向 5 cm）
+
+        #     # 初始化
+        #     if not hasattr(self, "scan_progress"):
+        #         self.scan_progress = 0.0
+
+        #     # 更新进度
+        #     self.scan_progress += step_speed * dt
+
+        #     # 计算偏移
+        #     x_offset = self.scan_progress
+        #     y_offset = wave_amplitude * np.sin(2 * np.pi * x_offset / wave_length)
+
+        #     # 设置位置
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 0] = self.contact_xy[0] + x_offset
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 1] = self.contact_xy[1] + y_offset
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.fingertip_midpoint_pos[0, 2] - 0.001
+
+        #     # 可选结束条件
+        #     # if x_offset > 0.1:
+        #     #     print("[DevForce] Finished sine scan.")
+        #     #     self.dev_phase = "stop"
+
+
+        #     # 更新z历史
+        #     if not hasattr(self, "z_history"):
+        #         self.z_history = []
+        #     self.z_history.append(z_pos)
+        #     if len(self.z_history) > 50:
+        #         self.z_history.pop(0)
+
+        #     # 检查50帧内是否有明显的z下降（掉下去）
+        #     # if len(self.z_history) == 50:
+        #     #     z_drop = max(self.z_history) - min(self.z_history)
+        #     #     if z_drop > 0.0005:  # 阈值可以调，比如3毫米
+        #     #         print("[DevForce] Z dropped significantly, stopping sine scan.")
+        #     #         self.dev_phase = "circle2"
+
+        #     # 检查50帧内是否有明显的z下降（掉下去）
+        #     if len(self.z_history) == 50:
+        #         z_drop = max(self.z_history) - min(self.z_history)
+        #         if z_drop > 0.0005:  # 阈值可以调
+        #             print("[DevForce] Z dropped significantly, switching to circle2.")
+        #             self.dev_phase = "stop"
+
+        #     self.prev_z = z_pos
+
+        #circle直接过渡2
+        # elif self.dev_phase == "circle":
+        #     # 粗扫描参数
+        #     step_speed = -0.001
+        #     wave_amplitude = 0.01
+        #     wave_length = 0.004
+
+        #     # 初始化
+        #     if not hasattr(self, "scan_progress"):
+        #         self.scan_progress = 0.0
+
+        #     self.scan_progress += step_speed * dt
+
+        #     # 计算轨迹
+        #     x_offset = self.scan_progress
+        #     y_offset = wave_amplitude * np.sin(2 * np.pi * x_offset / wave_length)
+
+        #     # 设置目标位置
+        #     current_x = self.contact_xy[0] + x_offset
+        #     current_y = self.contact_xy[1] + y_offset
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 0] = current_x
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 1] = current_y
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.fingertip_midpoint_pos[0, 2] - 0.001
+
+        #     # 更新 z 历史
+        #     if not hasattr(self, "z_history"):
+        #         self.z_history = []
+        #     self.z_history.append(z_pos)
+        #     if len(self.z_history) > 50:
+        #         self.z_history.pop(0)
+
+        #     # 检测掉落
+        #     if len(self.z_history) == 50:
+        #         z_drop = max(self.z_history) - min(self.z_history)
+        #         if z_drop > 0.0005:
+        #             print("[DevForce] Z dropped significantly, switching to circle2.")
+
+        #             # 停住位置
+        #             self.ctrl_target_fingertip_midpoint_pos[:, 0] = current_x
+        #             self.ctrl_target_fingertip_midpoint_pos[:, 1] = current_y
+        #             self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.fingertip_midpoint_pos[0, 2]
+
+        #             # 设置 circle2 起点
+        #             self.dev_phase = "circle2"
+        #             self.scan_progress2 = 0.0
+        #             self.z_history2 = []  # 重置
+        #             # 保存停下来的起点
+        #             self.circle2_origin = torch.tensor([current_x, current_y], device=self.device)
+
+        #             return  # 当帧立即返回，不执行后续运动
+
+        #     self.prev_z = z_pos
+
+
+        # elif self.dev_phase == "circle2":
+        #     # 细扫描参数
+        #     step_speed2 = -0.0002
+        #     wave_amplitude2 = 0.002
+        #     wave_length2 = 0.001
+
+        #     # 第一次进入 circle2
+        #     if not hasattr(self, "scan_progress2"):
+        #         self.scan_progress2 = 0.0
+        #         self.z_history2 = []
+        #         # 用 circle2_origin 作为起点
+        #         self.contact_xy = self.circle2_origin.clone()
+
+        #     # 更新进度
+        #     self.scan_progress2 += step_speed2 * dt
+
+        #     # 计算细扫描轨迹
+        #     x_offset2 = self.scan_progress2
+        #     y_offset2 = wave_amplitude2 * np.sin(2 * np.pi * x_offset2 / wave_length2)
+
+        #     # 设置目标位置
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 0] = self.contact_xy[0] + x_offset2
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 1] = self.contact_xy[1] + y_offset2
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.fingertip_midpoint_pos[0, 2] - 0.001
+
+        #     # 重新积累 z 历史
+        #     self.z_history2.append(z_pos)
+        #     if len(self.z_history2) > 50:
+        #         self.z_history2.pop(0)
+
+        #     # 细扫描掉落检测（确保运行一段时间再检测）
+        #     if len(self.z_history2) == 50:
+        #         z_drop = max(self.z_history2) - min(self.z_history2)
+        #         if z_drop > 0.0005:
+        #             print("[DevForce] Z dropped significantly, stopping fine scan.")
+        #             self.dev_phase = "stop"
+
+        #     self.prev_z = z_pos
+
+
+
+
+        elif self.dev_phase == "circle":
+            # 参数（第一阶段，粗扫描）
+            step_speed = -0.001
+            wave_amplitude = 0.01
+            wave_length = 0.004
+
+            # 初始化
+            if not hasattr(self, "scan_progress"):
+                self.scan_progress = 0.0
+
+            # 更新进度
+            self.scan_progress += step_speed * dt
+
+            # 计算偏移
+            x_offset = self.scan_progress
+            y_offset = wave_amplitude * np.sin(2 * np.pi * x_offset / wave_length)
+
+            # 当前位置
+            current_x = self.contact_xy[0] + x_offset
+            current_y = self.contact_xy[1] + y_offset
+            self.ctrl_target_fingertip_midpoint_pos[:, 0] = current_x
+            self.ctrl_target_fingertip_midpoint_pos[:, 1] = current_y
+            self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.fingertip_midpoint_pos[0, 2] - 0.001
+
+            # 更新历史
+            if not hasattr(self, "z_history"):
+                self.z_history = []
+            self.z_history.append(z_pos)
+            if len(self.z_history) > 50:
+                self.z_history.pop(0)
+
+            # 检查掉落
+            if len(self.z_history) == 50:
+                z_drop = max(self.z_history) - min(self.z_history)
+                if z_drop > 0.0005:
+                    print("[DevForce] Z dropped significantly, pausing before circle2.")
+
+                    # 停住机械臂
+                    self.ctrl_target_fingertip_midpoint_pos[:, 0] = current_x
+                    self.ctrl_target_fingertip_midpoint_pos[:, 1] = current_y
+                    self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.fingertip_midpoint_pos[0, 2]
+
+                    # 切换到 pause 阶段
+                    self.dev_phase = "circle_pause"
+                    self.pause_timer = 0.0
+                    self.circle2_origin = torch.tensor([current_x, current_y], device=self.device)
+                    return
+
+            self.prev_z = z_pos
+
+
+        elif self.dev_phase == "circle_pause":
+            # 暂停阶段：原地不动，计时
+            self.pause_timer += dt
+            # 保持原地
+            self.ctrl_target_fingertip_midpoint_pos[:, :] = self.fingertip_midpoint_pos
+
+            if self.pause_timer >= 0.5:  # 停 0.5 秒
+                print("[DevForce] Pause finished. Switching to circle2.")
+                self.dev_phase = "circle2"
+                self.scan_progress2 = 0.0
+                self.z_history2 = []
+                # 将 contact_xy 设置为停住时的位置
+                self.contact_xy = self.circle2_origin.clone()
+
+
+        elif self.dev_phase == "circle2":
+            step_speed1 = -0.0003
+            wave_amplitude1 = 0.01
+            wave_length1 = 0.004
+
+            # 初始化
+            if not hasattr(self, "scan_progress2"):
+                self.scan_progress2 = 0.0
+            if not hasattr(self, "z_history2"):
+                self.z_history2 = []
+
+            # 更新进度
+            self.scan_progress2 += step_speed1 * dt
+
+            # 计算偏移
+            x_offset1 = self.scan_progress2
+            y_offset1 = wave_amplitude1 * np.sin(2 * np.pi * x_offset1 / wave_length1)
+
+            # 设置位置
+            self.ctrl_target_fingertip_midpoint_pos[:, 0] = self.contact_xy[0] + x_offset1
+            self.ctrl_target_fingertip_midpoint_pos[:, 1] = self.contact_xy[1] + y_offset1
+            self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.fingertip_midpoint_pos[0, 2] - 0.001
+
+            # 记录 z 历史
+            self.z_history2.append(z_pos)
+            if len(self.z_history2) > 50:
+                self.z_history2.pop(0)
+
+            # **只有在收集满 50 帧以后再检查 drop**
+            if len(self.z_history2) == 50:
+                z_drop = max(self.z_history2) - min(self.z_history2)
+                if z_drop > 0.0005:
+                    print("[DevForce] Z dropped significantly, stopping fine scan.")
+                    self.dev_phase = "stop"
+
+            self.prev_z = z_pos
+
+
+
+
+
+
+
+        # --------------- 第三阶段: 停止 ----------------
+        # elif self.dev_phase == "stop":
+        #     self.ctrl_target_fingertip_midpoint_pos[:, :] = self.fingertip_midpoint_pos
+
+        # elif self.dev_phase == "stop":
+        #     # ── ① 让末端恢复成“笔直向下”的姿态 (roll = π, pitch = 0, yaw = 0) ─────────
+        #     down_quat = torch_utils.quat_from_euler_xyz(
+        #         roll=torch.full((1,), np.pi,  device=self.device),
+        #         pitch=torch.zeros(1,       device=self.device),
+        #         yaw=torch.zeros(1,         device=self.device),
+        #     )[0]                              # 生成 [w,x,y,z] 形式四元数
+        #     self.ctrl_target_fingertip_midpoint_quat[:] = down_quat
+
+        #     # ── ② XY 保持当前点，Z 方向持续向下压 1 mm/step ────────────────────────
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 0:2] = self.fingertip_midpoint_pos[0, 0:2]
+        #     self.ctrl_target_fingertip_midpoint_pos[:, 2]   = self.fingertip_midpoint_pos[0, 2] - 0.001
+
+    #     elif self.dev_phase == "stop":
+    #         # 保持当前位置，不再主动下压
+    #         self.ctrl_target_fingertip_midpoint_pos[:] = self.fingertip_midpoint_pos
+
+    #         # 取当前欧拉角
+    #         curr_euler = torch.stack(
+    #             torch_utils.get_euler_xyz(self.fingertip_midpoint_quat), dim=1
+    #         )
+
+    #         # 仅修正 Z 轴朝向 (yaw)，保持 roll/pitch 不变
+    #         target_euler = curr_euler.clone()
+    #         target_euler[:, 2] = 0.0  # 将 yaw 调回 0
+
+    #         # 转回四元数
+    #         self.ctrl_target_fingertip_midpoint_quat[:] = torch_utils.quat_from_euler_xyz(
+    #             target_euler[:, 0], target_euler[:, 1], target_euler[:, 2]
+    # )
+
+
+        elif self.dev_phase == "stop":
+            # ───────── 一次性初始化 ─────────
+            if not hasattr(self, "stop_stage"):
+                self.stop_stage = "lift"
+                self.start_z   = self.fingertip_midpoint_pos[0, 2]
+                self.lift_z    = self.start_z + 0.0002          # 抬 2 cm
+
+                self.down_quat = torch_utils.quat_from_euler_xyz(
+                    roll=torch.full((1,), np.pi, device=self.device),
+                    pitch=torch.zeros(1,          device=self.device),
+                    yaw=torch.zeros(1,            device=self.device),
+                )[0]                                           # [w,x,y,z]
+
+            # ───────── 1) 先抬高 ─────────
+            if self.stop_stage == "lift":
+                # new_z = self.fingertip_midpoint_pos[0, 2] + 0.0001
+                # finished = new_z >= self.lift_z
+                # self.ctrl_target_fingertip_midpoint_pos[:]  = self.fingertip_midpoint_pos
+                # self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.lift_z if finished else new_z
+                # self.ctrl_target_fingertip_midpoint_quat[:] = self.fingertip_midpoint_quat
+                finished = True
+                if finished:
+                    self.stop_stage = "rotate"
+
+            # ───────── 2) 在高处回正 ─────────
+            elif self.stop_stage == "rotate":
+                # 位置保持抬高处
+                self.ctrl_target_fingertip_midpoint_pos[:]  = self.fingertip_midpoint_pos
+                self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.lift_z - 0.003
+
+                # 线性插值 + normalize 代替 slerp
+                q_curr = self.fingertip_midpoint_quat
+                q_tgt  = self.down_quat.unsqueeze(0).repeat(q_curr.shape[0], 1)
+                alpha  = 0.1                                  # 每帧 10 % 逼近
+                q_interp = torch.nn.functional.normalize(q_curr*(1-alpha) + q_tgt*alpha, dim=-1)
+                self.ctrl_target_fingertip_midpoint_quat[:] = q_interp
+
+                # 判断是否已足够接近
+                dot = (q_interp * q_tgt).sum(-1).abs()
+                if torch.all(dot > 0.99999):                    # 约等于 2° 内
+                    self.stop_stage = "lower"
+
+            # ───────── 3) 回正后再缓慢下压 ─────────
+            elif self.stop_stage == "lower":
+                new_z = self.fingertip_midpoint_pos[0, 2] - 0.001
+                target_z = self.start_z - 0.001               # 只比原位低 1 mm
+                # finished = new_z <= target_z
+                finished = False
+                self.ctrl_target_fingertip_midpoint_pos[:]  = self.fingertip_midpoint_pos
+                self.ctrl_target_fingertip_midpoint_pos[:, 2] = target_z if finished else new_z
+                self.ctrl_target_fingertip_midpoint_quat[:] = self.down_quat
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
     def _pre_physics_step(self, action):
-        """Apply policy actions with smoothing."""
+        # 先检查装配条件
         self._check_attach_condition()
-        if self.joint_created and self.cfg_task.task_idx == 4:
-            self._sync_held_asset()
+
+        # 开发实验模式：基于力传感器进行简单控制
+        self.process_force_for_dev_experiment()
+
+        # 正常的 RL 逻辑
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
 
-        # self.actions = (
-        #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
-        # )
+        # 保存 RL 的动作
         self.actions = action.clone()
+
+
+
+
+    # def _pre_physics_step(self, action):
+    #     """Apply policy actions with smoothing."""
+    #     self._check_attach_condition()
+    #     if self.joint_created and self.cfg_task.task_idx == 4:
+    #         self._sync_held_asset()
+    #     env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
+    #     if len(env_ids) > 0:
+    #         self._reset_buffers(env_ids)
+
+    #     # self.actions = (
+    #     #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
+    #     # )
+    #     self.actions = action.clone()
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
@@ -652,14 +1244,19 @@ class FrankaChairEnv(DirectRLEnv):
         self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_mul(rot_actions_quat, self.fingertip_midpoint_quat)
 
         target_euler_xyz = torch.stack(torch_utils.get_euler_xyz(self.ctrl_target_fingertip_midpoint_quat), dim=1)
-        target_euler_xyz[:, 0] = 3.14159  # Restrict actions to be upright.
-        target_euler_xyz[:, 1] = 0.0
+        # 解锁键盘控制旋转45
+        # target_euler_xyz[:, 0] = 3.14159  # Restrict actions to be upright.
+        # target_euler_xyz[:, 1] = 0.0
 
         self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_from_euler_xyz(
             roll=target_euler_xyz[:, 0], pitch=target_euler_xyz[:, 1], yaw=target_euler_xyz[:, 2]
         )
 
         self.ctrl_target_gripper_dof_pos = 0.015 if gripper_actions < 0.0 else 0.0
+
+            # 2. 强制覆盖 RL 控制：自动左右摆动 gripper
+        self.process_force_for_dev_experiment()
+
         self.generate_ctrl_signals()
 
     def _set_gains(self, prop_gains, rot_deriv_scale=1.0):
@@ -982,47 +1579,95 @@ class FrankaChairEnv(DirectRLEnv):
 
             hand_down_quat = torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.device)
             self.hand_down_euler = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+            # while True:
+            #     n_bad = bad_envs.shape[0]
+
+            #     above_fixed_pos = fixed_tip_pos.clone()
+            #     above_fixed_pos[:, 2] += self.cfg_task.hand_init_pos[2]
+            #     above_fixed_pos[:, 1] += 0.2
+
+            #     rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
+            #     above_fixed_pos_rand = 2 * (rand_sample - 0.5) + 0.5  # [-1, 1] # [-0.5, 1.5]
+            #     hand_init_pos_rand = torch.tensor(self.cfg_task.hand_init_pos_noise, device=self.device)
+            #     above_fixed_pos_rand = above_fixed_pos_rand @ torch.diag(hand_init_pos_rand)
+            #     above_fixed_pos[bad_envs] += above_fixed_pos_rand
+
+            #     # (b) get random orientation facing down
+            #     hand_down_euler = (
+            #         torch.tensor(self.cfg_task.hand_init_orn, device=self.device).unsqueeze(0).repeat(n_bad, 1)
+            #     )
+
+            #     rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
+            #     above_fixed_orn_noise = 2 * (rand_sample - 0.5)  # [-1, 1]
+            #     hand_init_orn_rand = torch.tensor(self.cfg_task.hand_init_orn_noise, device=self.device)
+            #     above_fixed_orn_noise = above_fixed_orn_noise @ torch.diag(hand_init_orn_rand)
+            #     hand_down_euler += above_fixed_orn_noise
+            #     self.hand_down_euler[bad_envs, ...] = hand_down_euler
+            #     hand_down_quat[bad_envs, :] = torch_utils.quat_from_euler_xyz(
+            #         roll=hand_down_euler[:, 0], pitch=hand_down_euler[:, 1], yaw=hand_down_euler[:, 2]
+            #     )
+
+            #     # (c) iterative IK Method
+            #     self.ctrl_target_fingertip_midpoint_pos[bad_envs, ...] = above_fixed_pos[bad_envs, ...]
+            #     self.ctrl_target_fingertip_midpoint_quat[bad_envs, ...] = hand_down_quat[bad_envs, :]
+
+            #     pos_error, aa_error = self.set_pos_inverse_kinematics(env_ids=bad_envs)
+            #     pos_error = torch.linalg.norm(pos_error, dim=1) > 1e-3
+            #     angle_error = torch.norm(aa_error, dim=1) > 1e-3
+            #     any_error = torch.logical_or(pos_error, angle_error)
+            #     bad_envs = bad_envs[any_error.nonzero(as_tuple=False).squeeze(-1)]
+
+            #     # Check IK succeeded for all envs, otherwise try again for those envs
+            #     if bad_envs.shape[0] == 0:
+            #         break
+
+            # 把夹爪直接放在孔洞正上方（几乎没有偏移）
             while True:
                 n_bad = bad_envs.shape[0]
 
-                above_fixed_pos = fixed_tip_pos.clone()
-                above_fixed_pos[:, 2] += self.cfg_task.hand_init_pos[2]
-                above_fixed_pos[:, 1] += 0.2
+                # 目标位置：固定资产的 tip 上方 5 cm
+                # above_fixed_pos = fixed_tip_pos.clone()
+                above_fixed_pos = torch.tensor(
+                    [[0.01747902, -0.00659248, 0.7692827]],
+                    device=self.device
+                ).repeat(n_bad, 1)
+                above_fixed_pos[:, 2] += 0.02  # 距离孔洞 5cm 高度
+                above_fixed_pos[:, 1] -= 0.0045
+                above_fixed_pos[:, 0] += 0.004
+                # 不在 y 方向偏移：去掉 "+= 0.2"
 
-                rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
-                above_fixed_pos_rand = 2 * (rand_sample - 0.5) + 0.5  # [-1, 1] # [-0.5, 1.5]
-                hand_init_pos_rand = torch.tensor(self.cfg_task.hand_init_pos_noise, device=self.device)
-                above_fixed_pos_rand = above_fixed_pos_rand @ torch.diag(hand_init_pos_rand)
-                above_fixed_pos[bad_envs] += above_fixed_pos_rand
+                # （不加随机扰动，保证直接正上方）
+                # 如果你想留一点点随机扰动，比如 1 cm，可以这样：
+                # noise_scale = 0.01  # 1cm
+                # above_fixed_pos += (torch.rand_like(above_fixed_pos) - 0.5) * noise_scale
 
-                # (b) get random orientation facing down
-                hand_down_euler = (
-                    torch.tensor(self.cfg_task.hand_init_orn, device=self.device).unsqueeze(0).repeat(n_bad, 1)
-                )
+                # 朝下的欧拉角（roll 180°）
+                hand_down_euler = torch.tensor(
+                    self.cfg_task.hand_init_orn, device=self.device
+                ).unsqueeze(0).repeat(n_bad, 1)
 
-                rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
-                above_fixed_orn_noise = 2 * (rand_sample - 0.5)  # [-1, 1]
-                hand_init_orn_rand = torch.tensor(self.cfg_task.hand_init_orn_noise, device=self.device)
-                above_fixed_orn_noise = above_fixed_orn_noise @ torch.diag(hand_init_orn_rand)
-                hand_down_euler += above_fixed_orn_noise
-                self.hand_down_euler[bad_envs, ...] = hand_down_euler
+                # 不加任何姿态随机扰动
                 hand_down_quat[bad_envs, :] = torch_utils.quat_from_euler_xyz(
-                    roll=hand_down_euler[:, 0], pitch=hand_down_euler[:, 1], yaw=hand_down_euler[:, 2]
+                    roll=hand_down_euler[:, 0],
+                    pitch=hand_down_euler[:, 1],
+                    yaw=hand_down_euler[:, 2],
                 )
 
-                # (c) iterative IK Method
+                # 设置目标
                 self.ctrl_target_fingertip_midpoint_pos[bad_envs, ...] = above_fixed_pos[bad_envs, ...]
                 self.ctrl_target_fingertip_midpoint_quat[bad_envs, ...] = hand_down_quat[bad_envs, :]
 
+                # 用 IK 移过去
                 pos_error, aa_error = self.set_pos_inverse_kinematics(env_ids=bad_envs)
                 pos_error = torch.linalg.norm(pos_error, dim=1) > 1e-3
                 angle_error = torch.norm(aa_error, dim=1) > 1e-3
                 any_error = torch.logical_or(pos_error, angle_error)
                 bad_envs = bad_envs[any_error.nonzero(as_tuple=False).squeeze(-1)]
 
-                # Check IK succeeded for all envs, otherwise try again for those envs
+                # 全部成功后退出
                 if bad_envs.shape[0] == 0:
                     break
+
 
                 self._set_franka_to_default_pose(
                     joints=[0.00871, -0.10368, -0.00794, -1.49139, -0.00083, 1.38774, 0.0], env_ids=bad_envs

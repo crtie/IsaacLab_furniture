@@ -34,7 +34,7 @@ STATE_DIM_CFG = {
     "held_quat": 4,
     "fixed_pos": 3,
     "fixed_quat": 4,
-    "task_prop_gains": 6,
+    "task_prop_gains": 12,
     "ema_factor": 1,
     "pos_threshold": 3,
     "rot_threshold": 3,
@@ -60,7 +60,9 @@ class CtrlCfg:
     reset_joints = [1.5178e-03, -1.9651e-01, -1.4364e-03, -1.9761, -2.7717e-04, 1.7796, 7.8556e-01]
     reset_task_prop_gains = [300, 300, 300, 20, 20, 20]
     reset_rot_deriv_scale = 10.0
-    default_task_prop_gains = [100, 100, 100, 30, 30, 30]
+    # default_task_prop_gains = [100, 100, 100, 30, 30, 30]
+    default_task_prop_gains = [500, 500, 500, 50, 50, 50]
+
 
     # Null space parameters.
     default_dof_pos_tensor = [-1.3003, -0.4015, 1.1791, -2.1493, 0.4001, 1.9425, 0.4754]
@@ -70,7 +72,8 @@ class CtrlCfg:
 
 @configclass
 class FactoryEnvCfg(DirectRLEnvCfg):
-    decimation = 8
+    # decimation = 8
+    decimation = 1
     action_space = 7
     # num_*: will be overwritten to correspond to obs_order, state_order.
     observation_space = 21
