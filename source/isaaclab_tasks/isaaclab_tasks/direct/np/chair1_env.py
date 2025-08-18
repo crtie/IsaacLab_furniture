@@ -418,6 +418,7 @@ class FrankaChair1Env(DirectRLEnv):
         print("R_dist:", R_dist)
         print("t_tangent:", t_tangent)
         print("t_normal:", t_normal)
+        print("joint pos:",self.joint_pos[:, 0:7],)
         # print("joint names of frame:",self._fixed_asset.joint_names)
         if not self.joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.01:
             self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)

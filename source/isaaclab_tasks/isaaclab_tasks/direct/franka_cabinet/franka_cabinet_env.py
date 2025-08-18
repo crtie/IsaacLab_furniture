@@ -22,7 +22,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import sample_uniform
 
-
+from pdb import set_trace as bp
 @configclass
 class FrankaCabinetEnvCfg(DirectRLEnvCfg):
     # env
@@ -199,7 +199,7 @@ class FrankaCabinetEnv(DirectRLEnv):
         self.robot_dof_upper_limits = self._robot.data.soft_joint_pos_limits[0, :, 1].to(device=self.device)
 
         self.robot_dof_speed_scales = torch.ones_like(self.robot_dof_lower_limits)
-        self.robot_dof_speed_scales[self._robot.find_joints("panda_finger_joint1")[0]] = 0.1
+        self.robot_dof_speed_scales[self._robot.find_jointsf("panda_finger_joint1")[0]] = 0.1
         self.robot_dof_speed_scales[self._robot.find_joints("panda_finger_joint2")[0]] = 0.1
 
         self.robot_dof_targets = torch.zeros((self.num_envs, self._robot.num_joints), device=self.device)
@@ -345,6 +345,14 @@ class FrankaCabinetEnv(DirectRLEnv):
 
         # Need to refresh the intermediate values so that _get_observations() can use the latest values
         self._compute_intermediate_values(env_ids)
+
+    def _get_states(self) -> dict:
+        return {
+            "robot_joint_pos": self._robot.data.joint_pos,
+            "robot_joint_vel": self._robot.data.joint_vel,
+            "cabinet_joint_pos": self._cabinet.data.joint_pos,
+            "cabinet_joint_vel": self._cabinet.data.joint_vel,
+        }
 
     def _get_observations(self) -> dict:
         dof_pos_scaled = (

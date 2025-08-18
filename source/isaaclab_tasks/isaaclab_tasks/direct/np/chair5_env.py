@@ -169,35 +169,22 @@ class FrankaChair5Env(DirectRLEnv):
         self._fixed_asset = Articulation(self.cfg_task.fixed_asset)
 
         if self.cfg_task.task_idx == 1:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._held_asset = self._plug1
+            self._screw1 = RigidObject(self.cfg_task.screw1)
+            self._held_asset = self._screw1
             self._connection_cfg = self.cfg_task.connection_cfg1
 
         if self.cfg_task.task_idx ==2:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._plug2 = RigidObject(self.cfg_task.plug2)
-            self._held_asset = self._plug2
+            self._screw1 = RigidObject(self.cfg_task.screw1)
+            self._screw2 = RigidObject(self.cfg_task.screw2)
+            self._held_asset = self._screw2
             self._connection_cfg = self.cfg_task.connection_cfg2
         
         if self.cfg_task.task_idx == 3:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._plug2 = RigidObject(self.cfg_task.plug2)
-            self._rod_asset = RigidObject(self.cfg_task.rod)
-            self._held_asset = self._rod_asset
+            self._screw1 = RigidObject(self.cfg_task.screw1)
+            self._screw2 = RigidObject(self.cfg_task.screw2)
+            self._screw3 = RigidObject(self.cfg_task.screw3)
+            self._held_asset = self._screw3
             self._connection_cfg = self.cfg_task.connection_cfg3
-            
-        if self.cfg_task.task_idx == 4:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._held_asset = self._plug1
-            self._rod_asset = RigidObject(self.cfg_task.rod)
-            self._connection_cfg = self.cfg_task.connection_cfg4
-
-        if self.cfg_task.task_idx == 5:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._plug2 = RigidObject(self.cfg_task.plug2)
-            self._held_asset = self._plug2
-            self._rod_asset = RigidObject(self.cfg_task.rod)
-            self._connection_cfg = self.cfg_task.connection_cfg5
         
 
         self.scene.clone_environments(copy_from_source=False)
@@ -351,6 +338,7 @@ class FrankaChair5Env(DirectRLEnv):
         rel_mat_np[:3, :3] = rot
         rel_mat_np[:3, 3] = pos
         return rel_mat_np
+    
 
     def _create_fixed_joint(self, connection_idx):
         """Create a fixed joint between the held asset and the fixed asset."""
@@ -359,25 +347,17 @@ class FrankaChair5Env(DirectRLEnv):
         import omni.usd
         stage = omni.usd.get_context().get_stage()
         if connection_idx == 1:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw1")
             joint_path = "/World/envs/env_0/FixedJoint1"
-            connection_cfg = self.cfg_task.connection_cfg1
+            connection_cfg = self.cfg_task.connection_cfg1_fix
         elif connection_idx == 2:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw2")
             joint_path = "/World/envs/env_0/FixedJoint2"
             connection_cfg = self.cfg_task.connection_cfg2
         elif connection_idx == 3:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Rod")
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw3")
             joint_path = "/World/envs/env_0/FixedJoint3"
             connection_cfg = self.cfg_task.connection_cfg3
-        elif connection_idx == 4:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
-            joint_path = "/World/envs/env_0/FixedJoint4"
-            connection_cfg = self.cfg_task.connection_cfg4
-        elif connection_idx == 5:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
-            joint_path = "/World/envs/env_0/FixedJoint5"
-            connection_cfg = self.cfg_task.connection_cfg5
 
 
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
@@ -409,9 +389,20 @@ class FrankaChair5Env(DirectRLEnv):
         self.step_sim_no_action()
 
 
-    def _create_screw_joint(self):
+    def _create_screw_joint(self,connection_idx):
         stage = omni.usd.get_context().get_stage()
-        held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
+        if connection_idx == 1:
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw1")
+            joint_path = "/World/envs/env_0/FixedJoint1"
+            connection_cfg = self.cfg_task.connection_cfg1
+        elif connection_idx == 2:
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw2")
+            joint_path = "/World/envs/env_0/FixedJoint2"
+            connection_cfg = self.cfg_task.connection_cfg2
+        elif connection_idx == 3:
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw3")
+            joint_path = "/World/envs/env_0/FixedJoint3"
+            connection_cfg = self.cfg_task.connection_cfg3
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
         connection_cfg = self._connection_cfg
 
@@ -480,7 +471,7 @@ class FrankaChair5Env(DirectRLEnv):
         # print("joint names of frame:",self._fixed_asset.joint_names)
         if not self.joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.008:
             # self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
-            self._create_screw_joint()
+            self._create_screw_joint(connection_idx=self.cfg_task.task_idx)
             self.joint_created = True
             rel_mat = self._get_real_mat()
             gt_real_mat = self._connection_cfg.pose_to_base
@@ -490,7 +481,7 @@ class FrankaChair5Env(DirectRLEnv):
 
 
         elif self.joint_created :
-            print("Fixed joint already created.")
+            print("Joint already created.")
         else:
             print("Not creating fixed joint yet, waiting for conditions to be met.")
 
@@ -527,7 +518,7 @@ class FrankaChair5Env(DirectRLEnv):
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
         self._check_attach_condition()
-        if self.joint_created and self.cfg_task.task_idx == 1:
+        if self.joint_created:
             self._sync_held_asset()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
@@ -924,7 +915,7 @@ class FrankaChair5Env(DirectRLEnv):
         self.step_sim_no_action()
 
 
-        if self.cfg_task.task_idx in [1,2,4,5]:
+        if self.cfg_task.task_idx ==1:
             fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
             fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
             fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
@@ -937,6 +928,20 @@ class FrankaChair5Env(DirectRLEnv):
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
             rela_trans[:, 1] += 0.26
             rela_trans[:, 0] += 0.0
+
+        elif self.cfg_task.task_idx ==2:
+            fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
+
+            _, fixed_tip_pos = torch_utils.tf_combine(
+                self.fixed_quat, self.fixed_pos, self.identity_quat, fixed_tip_pos_local
+            )
+            self.fixed_pos_obs_frame[:] = fixed_tip_pos
+            rela_trans = fixed_tip_pos.clone()
+            rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
+            rela_trans[:, 1] += 0.26
+            rela_trans[:, 0] += 0.3
 
 
         elif self.cfg_task.task_idx == 3:
@@ -1011,13 +1016,6 @@ class FrankaChair5Env(DirectRLEnv):
         elif self.cfg_task.task_idx == 3:
             self._create_fixed_joint(connection_idx=1)
             self._create_fixed_joint(connection_idx=2)
-
-        elif self.cfg_task.task_idx == 4:
-            self._create_fixed_joint(connection_idx=3)
-
-        if self.cfg_task.task_idx == 5:
-            self._create_fixed_joint(connection_idx=3)
-            self._create_fixed_joint(connection_idx=4)
 
         # (3) Randomize asset-in-gripper location.
         # flip gripper z orientation
