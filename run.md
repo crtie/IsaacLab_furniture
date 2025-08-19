@@ -66,9 +66,8 @@ $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
   --mass 0.1
 
 
-$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Franka-Chair-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
+$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Franka-Chair5-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
 
-$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Factory-NutThread-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
 
 $ python scripts/reinforcement_learning/rl_games/train.py --task Isaac-Factory-NutThread-Direct-v0 --num_envs 128 --headless
 

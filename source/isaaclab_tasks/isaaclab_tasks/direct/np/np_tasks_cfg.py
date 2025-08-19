@@ -1002,7 +1002,7 @@ class ChairAssembly5(FactoryTask):
     #! crtie: task 2 is "the second screw",
     #! crtie: task 3 is "the third screw"
 
-    task_idx = 2
+    task_idx = 3
 
 
     name = "chair_assembly"
@@ -1078,7 +1078,7 @@ class ChairAssembly5(FactoryTask):
         spawn=sim_utils.UsdFileCfg(
             usd_path=plug_config.usd_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                disable_gravity=False,
+                disable_gravity=True,
                 max_depenetration_velocity=5.0,
                 linear_damping=0.0,
                 angular_damping=0.0,
@@ -1094,13 +1094,41 @@ class ChairAssembly5(FactoryTask):
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
+                                                             collision_enabled=False),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
 
     screw2: RigidObjectCfg = RigidObjectCfg(
         prim_path="/World/envs/env_.*/Screw2",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=plug_config.usd_path,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=True,
+                max_depenetration_velocity=5.0,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_linear_velocity=1000.0,
+                max_angular_velocity=3666.0,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=192,
+                solver_velocity_iteration_count=1, 
+                max_contact_impulse=1e32,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
+            scale = np.array([0.6,0.6,0.7]), 
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                articulation_enabled=False,  # Set to False for RigidObject
+            ),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
+                                                             collision_enabled=False),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
+    )
+
+    screw3: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Screw3",
         spawn=sim_utils.UsdFileCfg(
             usd_path=plug_config.usd_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
@@ -1131,7 +1159,7 @@ class ChairAssembly5(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Screw1",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0, 0.01367946],
+            [[-1.0, 0.0, 0.0, 0.0137],
             [0.0, 0.0, 1.0, 0.277],
             [0.0, 1.0, 0.0, -0.260],
             [0.0, 0.0, 0.0, 1.0]]),
@@ -1144,9 +1172,9 @@ class ChairAssembly5(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Screw1",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0, 0.01367946],
-            [0.0, 0.0, 1.0, 0.277],
-            [0.0, 1.0, 0.0, -0.275],
+            [[-1.0, 0.0, 0.0, 0.0124],
+            [0.0, 0.0, 1.0, 0.26],
+            [0.0, 1.0, 0.0, -0.252],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
@@ -1157,9 +1185,9 @@ class ChairAssembly5(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Screw2",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0, 0.2781747],
-            [0.0, 0.0, 1.0, 0.275],
-            [0.0, 1.0, 0.0, -0.260],
+            [[-1.0, 0.0, 0.0, 0.273],
+            [0.0, 0.0, 1.0, 0.277],
+            [0.0, 1.0, 0.0, -0.2595],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
@@ -1170,9 +1198,9 @@ class ChairAssembly5(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Screw3",
         pose_to_base = np.array(
-            [[0.0, -1.0, 0.0,  2.4958238e-02],
-            [ -1.0, 0.0,  0.0,  2.2895001e-01],
-            [0.0, -0.0,  -1.0, -2.7744323e-01],
+            [[-1.0, 0.0, 0.0,  0.0117],
+            [0.0, 0.0, 1.0,  0.277],
+            [0.0, 1.0, 0.0, -0.4895],
             [ 0.0,  0.0,  0.0,  1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
