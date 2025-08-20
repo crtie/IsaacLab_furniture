@@ -1,7 +1,6 @@
 <?xml version="1.0"?>
 <robot name="frame_back">
   
-  <!-- Base link using frame_re.obj -->
   <link name="frame_re">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -22,7 +21,7 @@
     </inertial>
   </link>
 
-  <!-- Backrest link using backrest.obj -->
+  <!-- Backrest link using backrest_re.obj -->
   <link name="backrest">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -135,6 +134,35 @@
     <child link="frame_mirror"/>
     <!-- Rotation matrix [[-1,0,0],[0,-1,0],[0,0,1]] converted to RPY -->
     <origin xyz="0.28772 0.25098 -0.00052" rpy="0 0 3.1416"/>
+  </joint>
+
+  <!-- Seat link -->
+  <link name="seat">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="seat.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="seat.obj"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <!-- Fixed joint connecting frame_re to seat -->
+  <joint name="frame_to_seat" type="fixed">
+    <parent link="frame_re"/>
+    <child link="seat"/>
+    <!-- Rotation matrix [[0,-1,0],[1,0,0],[0,0,1]] converted to RPY -->
+    <origin xyz="0.0031 0.26 -0.27" rpy="-3.1415 3.1415 1.5708"/>
   </joint>
 
 </robot>

@@ -19,7 +19,7 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import axis_angle_from_quat
 
 from . import factory_control as fc
-from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChair5Cfg
+from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChair6Cfg
 from .np_tasks_cfg import ChairAssembly1, ConnectionCfg
 from pdb import set_trace as bp
 from .np_utils.group_utils import SE3dist
@@ -29,10 +29,10 @@ from pxr import Usd, UsdPhysics, PhysxSchema, Sdf, Gf, Tf
 from omni.physx.scripts import utils
 import omni.usd
 
-class FrankaChair5Env(DirectRLEnv):
-    cfg: FrankaChair5Cfg
+class FrankaChair6Env(DirectRLEnv):
+    cfg: FrankaChair6Cfg
 
-    def __init__(self, cfg: FrankaChair5Cfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: FrankaChair6Cfg, render_mode: str | None = None, **kwargs):
         # Update number of obs/states
         cfg.observation_space = sum([OBS_DIM_CFG[obs] for obs in cfg.obs_order])
         cfg.state_space = sum([STATE_DIM_CFG[state] for state in cfg.state_order])
@@ -497,20 +497,22 @@ class FrankaChair5Env(DirectRLEnv):
         pitch = getattr(self._connection_cfg, "pitch", 0.5)  # 螺距，单位：米/弧度
         dz = float(delta_theta * pitch)  # 螺旋升降量
         print("dz:", dz)
-        if abs(dz) >0.1 and not self.trigger0:
+        if abs(dz) >0.05 and not self.trigger0:
+            bp()
             print("triggering joint limit1")
             prim = self.fixed_joint_prim
             limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
-            limit_api.CreateLowAttr(-0.015)
-            limit_api.CreateHighAttr(0.015)
+            limit_api.CreateLowAttr(-0.05)
+            limit_api.CreateHighAttr(0.05)
             self.trigger0 = True
-        elif abs(dz) > 0.2 and not self.trigger1:
-            print("triggering joint limit2")
-            prim = self.fixed_joint_prim
-            limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
-            limit_api.CreateLowAttr(-0.03)
-            limit_api.CreateHighAttr(0.03)
-            self.trigger1 = True
+        # elif abs(dz) > 0.3 and not self.trigger1:
+        #     bp()
+        #     print("triggering joint limit2")
+        #     prim = self.fixed_joint_prim
+        #     limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
+        #     limit_api.CreateLowAttr(-0.02)
+        #     limit_api.CreateHighAttr(0.02)
+        #     self.trigger1 = True
 
 
 
@@ -1002,6 +1004,11 @@ class FrankaChair5Env(DirectRLEnv):
             )
 
             ik_attempt += 1
+            if ik_attempt > 10:
+                print("IK failed to converge after 10 attempts, return.")
+                # self.reset_buf[bad_envs] = 1
+                # self._reset_idx(bad_envs)
+                break
 
         self.step_sim_no_action()
 
