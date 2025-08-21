@@ -1008,7 +1008,7 @@ class ChairAssembly5(FactoryTask):
     #! crtie: task 2 is "the second screw",
     #! crtie: task 3 is "the third screw"
 
-    task_idx = 1
+    task_idx = 3
 
 
     name = "chair_assembly"
@@ -1128,7 +1128,7 @@ class ChairAssembly5(FactoryTask):
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
-                                                             collision_enabled=False),
+                                                             ),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -1204,9 +1204,9 @@ class ChairAssembly5(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Screw3",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0,  0.0117],
+            [[-1.0, 0.0, 0.0,  0.020],
             [0.0, 0.0, 1.0,  0.277],
-            [0.0, 1.0, 0.0, -0.4895],
+            [0.0, 1.0, 0.0, -0.498],
             [ 0.0,  0.0,  0.0,  1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
