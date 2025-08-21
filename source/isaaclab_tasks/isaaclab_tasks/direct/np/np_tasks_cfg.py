@@ -1285,11 +1285,11 @@ class ChairAssembly6(FactoryTask):
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass=fixed_asset_cfg.mass),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-3, rest_offset=5e-3,
-                                                             ),
+                                                             collision_enabled=False),
         ),
 
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(-0.16, -0.2, 1.3), rot=(1.0, 0.0, 0.0, 0.0), joint_pos={}, joint_vel={}
+            pos=(-0.1, -0.1, 1.3), rot=(1.0, 0.0, 0.0, 0.0), joint_pos={}, joint_vel={}
             # pos=(-0.16, -0.14, 3.20), rot=(1.0, 0.0, 0.0, 0.0), joint_pos={}, joint_vel={}
         ),
         actuators={},
@@ -1318,7 +1318,7 @@ class ChairAssembly6(FactoryTask):
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
-                                                             collision_enabled=False),
+                                                             ),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -1382,9 +1382,9 @@ class ChairAssembly6(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Screw1",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0, 0.0137],
-            [0.0, 0.0, 1.0, 0.277],
-            [0.0, 1.0, 0.0, -0.260],
+            [[-1.0, 0.0, 0.0, 0.020],
+            [0.0, 0.0, 1.0, 0.074],
+            [0.0, 1.0, 0.0, -0.220],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),

@@ -520,6 +520,7 @@ class FrankaChair6Env(DirectRLEnv):
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
         self._check_attach_condition()
+        print("joint state:", self._robot.data.joint_pos[0, 0:7])
         if self.joint_created:
             self._sync_held_asset()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
@@ -921,7 +922,8 @@ class FrankaChair6Env(DirectRLEnv):
             self.fixed_pos_obs_frame[:] = fixed_tip_pos
             rela_trans = fixed_tip_pos.clone()
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
-            rela_trans[:, 1] += 0.26
+            rela_trans[:, 2] -= 0.53
+            rela_trans[:, 1] += 0.1
             rela_trans[:, 0] += 0.0
 
         elif self.cfg_task.task_idx ==2:
@@ -1000,7 +1002,7 @@ class FrankaChair6Env(DirectRLEnv):
                 break
 
             self._set_franka_to_default_pose(
-                joints=[0.00871, -0.10368, -0.00794, -1.49139, -0.00083, 1.38774, 0.0], env_ids=bad_envs
+                joints=[-1.2282, -0.5239,  0.9315, -2.2790,  0.4405,  1.9137, -1.1588], env_ids=bad_envs
             )
 
             ik_attempt += 1
