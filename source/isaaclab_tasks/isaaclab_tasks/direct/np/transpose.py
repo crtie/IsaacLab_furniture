@@ -2,10 +2,10 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-frame1_t = np.array([-0.16,-0.3,0.74])
-frame2_t = np.array([-0.1569,0.022,1.0])
-frame1_r = R.from_euler('xzy', [90.0, 0.0, 0.0], degrees=True)
-frame2_r = R.from_euler('xzy', [90, 90, 0.0], degrees=True)
+frame1_t = np.array([-0.16,-0.15,0.74])
+frame2_t = np.array([0.1444,-0.033,1.20])
+frame1_r = R.from_euler('xzy', [-180, 0.0, -180], degrees=True)
+frame2_r = R.from_euler('xzy', [0, 0, 0.0], degrees=True)
 
 # compute the pose of frame2 in frame1's coordinate system
 relative_translation_xzy = (frame2_t - frame1_t) @ frame1_r.as_matrix()

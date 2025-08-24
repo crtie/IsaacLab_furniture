@@ -11,7 +11,7 @@ import numpy as np
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
 ASSET_DIR = f"{ISAACLAB_NUCLEUS_DIR}/Factory"
-CHAIR_ASSET_DIR = os.path.join(dir_path, "asset")
+CHAIR_ASSET_DIR = os.path.join(dir_path, "asset", "chair")
 
 @configclass
 class FixedAssetCfg:
@@ -107,7 +107,7 @@ class ChairFrame(FixedAssetCfg):
 
 @configclass
 class ChairFrameBack(FixedAssetCfg):
-    usd_path = f"{CHAIR_ASSET_DIR}/mesh/frame_back.usd"
+    usd_path = f"{CHAIR_ASSET_DIR}/frame_back.usd"
     diameter = 0.0081
     height = 0.025
     mass = 0.05
@@ -115,7 +115,7 @@ class ChairFrameBack(FixedAssetCfg):
 
 @configclass
 class ChairFrameBackRod(FixedAssetCfg):
-    usd_path = f"{CHAIR_ASSET_DIR}/mesh/frame_back_rod.usd"
+    usd_path = f"{CHAIR_ASSET_DIR}/frame_back_rod.usd"
     diameter = 0.0081
     height = 0.025
     mass = 0.05
@@ -123,7 +123,7 @@ class ChairFrameBackRod(FixedAssetCfg):
 
 @configclass
 class ChairFrameBackRodRod(FixedAssetCfg):
-    usd_path = f"{CHAIR_ASSET_DIR}/mesh/frame_back_rod_rod.usd"
+    usd_path = f"{CHAIR_ASSET_DIR}/frame_back_rod_rod.usd"
     diameter = 0.0081
     height = 0.025
     mass = 0.05
@@ -131,7 +131,7 @@ class ChairFrameBackRodRod(FixedAssetCfg):
 
 @configclass
 class ChairwoSeat(FixedAssetCfg):
-    usd_path = f"{CHAIR_ASSET_DIR}/mesh/frame_wo_seat.usd"
+    usd_path = f"{CHAIR_ASSET_DIR}/frame_wo_seat.usd"
     diameter = 0.0081
     height = 0.025
     mass = 0.05
@@ -139,7 +139,7 @@ class ChairwoSeat(FixedAssetCfg):
 
 @configclass
 class ChairwSeat(FixedAssetCfg):
-    usd_path = f"{CHAIR_ASSET_DIR}/mesh/chair_all.usd"
+    usd_path = f"{CHAIR_ASSET_DIR}/chair_all.usd"
     diameter = 0.0081
     height = 0.025
     mass = 0.05

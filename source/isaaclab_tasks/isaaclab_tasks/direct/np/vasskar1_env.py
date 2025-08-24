@@ -12,6 +12,7 @@ import carb
 import isaacsim.core.utils.torch as torch_utils
 
 import isaaclab.sim as sim_utils
+from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
@@ -19,20 +20,20 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import axis_angle_from_quat
 
 from . import factory_control as fc
-from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChair1Cfg
-from .chair_tasks_cfg import ChairAssembly1, ConnectionCfg
+from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaVasskar1Cfg
 from pdb import set_trace as bp
 from .np_utils.group_utils import SE3dist
+from .np_utils.viz_utils import define_markers
 from scipy.spatial.transform import Rotation as R
 import torch
 from pxr import Usd, UsdPhysics, PhysxSchema, Sdf, Gf, Tf
 from omni.physx.scripts import utils
 import omni.usd
 
-class FrankaChair1Env(DirectRLEnv):
-    cfg: FrankaChair1Cfg
+class FrankaVasskar1Env(DirectRLEnv):
+    cfg: FrankaVasskar1Cfg
 
-    def __init__(self, cfg: FrankaChair1Cfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: FrankaVasskar1Cfg, render_mode: str | None = None, **kwargs):
         # Update number of obs/states
         cfg.observation_space = sum([OBS_DIM_CFG[obs] for obs in cfg.obs_order])
         cfg.state_space = sum([STATE_DIM_CFG[state] for state in cfg.state_order])
@@ -139,7 +140,7 @@ class FrankaChair1Env(DirectRLEnv):
         # Used to compute target poses.
         self.fixed_success_pos_local = torch.zeros((self.num_envs, 3), device=self.device)
 
-        if self.cfg_task.name == "chair_assembly":
+        if self.cfg_task.name == "vasskar_assembly":
             self.fixed_success_pos_local[:, 2] = 0.0
         else:
             raise NotImplementedError("Task not implemented")
@@ -164,43 +165,27 @@ class FrankaChair1Env(DirectRLEnv):
         cfg.mass_props = sim_utils.MassPropertiesCfg(mass=1e7),
         cfg.func(
             "/World/envs/env_.*/Table", cfg, translation=(0., 0.0, 0.0), orientation=(1, 0.0, 0.0, 0.0))
-
+        print(f"robot cfg: {self.cfg.robot}")
         self._robot = Articulation(self.cfg.robot)
         self._fixed_asset = Articulation(self.cfg_task.fixed_asset)
 
-
         if self.cfg_task.task_idx == 1:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._held_asset = self._plug1
+            self._top1 = RigidObject(self.cfg_task.top1)
+            self._held_asset = self._top1
             self._connection_cfg = self.cfg_task.connection_cfg1
 
-    
         if self.cfg_task.task_idx ==2:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._plug2 = RigidObject(self.cfg_task.plug2)
-            self._held_asset = self._plug2
+            self._top1 = RigidObject(self.cfg_task.top1)
+            self._top2 = RigidObject(self.cfg_task.top2)
+            self._held_asset = self._top2
             self._connection_cfg = self.cfg_task.connection_cfg2
-        
-        if self.cfg_task.task_idx == 3:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._plug2 = RigidObject(self.cfg_task.plug2)
-            self._backrest_asset = RigidObject(self.cfg_task.backrest)
-            self._held_asset = self._backrest_asset
-            self._connection_cfg = self.cfg_task.connection_cfg3
-            
-        if self.cfg_task.task_idx == 4:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._held_asset = self._plug1
-            self._backrest_asset = RigidObject(self.cfg_task.backrest)
-            self._connection_cfg = self.cfg_task.connection_cfg4
 
-        if self.cfg_task.task_idx == 5:
-            self._plug1 = RigidObject(self.cfg_task.plug1)
-            self._plug2 = RigidObject(self.cfg_task.plug2)
-            self._held_asset = self._plug2
-            self._backrest_asset = RigidObject(self.cfg_task.backrest)
-            self._connection_cfg = self.cfg_task.connection_cfg5
-        # self._backrest_asset = RigidObject(self.cfg_task.backrest_asset)
+        if self.cfg_task.task_idx ==3:
+            self._top1 = RigidObject(self.cfg_task.top1)
+            self._top2 = RigidObject(self.cfg_task.top2)
+            self._frame2 = RigidObject(self.cfg_task.frame2)
+            self._held_asset = self._frame2
+            self._connection_cfg = self.cfg_task.connection_cfg2
         
 
         self.scene.clone_environments(copy_from_source=False)
@@ -216,6 +201,9 @@ class FrankaChair1Env(DirectRLEnv):
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
 
+        self.visualization_markers = define_markers()
+        self.marker_locations = torch.zeros((self.num_envs, 3)).cuda()
+        self.marker_orientations = torch.zeros((self.num_envs, 4)).cuda()
 
     def _compute_intermediate_values(self, dt):
         """Get values computed from raw tensors. This includes adding noise."""
@@ -354,6 +342,7 @@ class FrankaChair1Env(DirectRLEnv):
         rel_mat_np[:3, :3] = rot
         rel_mat_np[:3, 3] = pos
         return rel_mat_np
+    
 
     def _create_fixed_joint(self, connection_idx):
         """Create a fixed joint between the held asset and the fixed asset."""
@@ -362,33 +351,24 @@ class FrankaChair1Env(DirectRLEnv):
         import omni.usd
         stage = omni.usd.get_context().get_stage()
         if connection_idx == 1:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/TopFrame1")
             joint_path = "/World/envs/env_0/FixedJoint1"
-            connection_cfg = self.cfg_task.connection_cfg1
+            connection_cfg = self.cfg_task.connection_cfg1_fix
         elif connection_idx == 2:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/TopFrame2")
             joint_path = "/World/envs/env_0/FixedJoint2"
             connection_cfg = self.cfg_task.connection_cfg2
-        elif connection_idx == 3:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Backrest")
-            joint_path = "/World/envs/env_0/FixedJoint3"
-            connection_cfg = self.cfg_task.connection_cfg3
-        elif connection_idx == 4:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug1")
-            joint_path = "/World/envs/env_0/FixedJoint4"
-            connection_cfg = self.cfg_task.connection_cfg4
-        elif connection_idx == 5:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Plug2")
-            joint_path = "/World/envs/env_0/FixedJoint5"
-            connection_cfg = self.cfg_task.connection_cfg5
-
 
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
         
 
         to_path = held_prim.GetPath()
         from_path = fixed_prim.GetPath()
+        # rel_mat1 = self._get_real_mat()
         rel_mat = connection_cfg.pose_to_base
+        # rel_mat = np.eye(4, dtype=np.float32)
+        # rel_mat[:3, :3] = rel_mat1[:3, :3]
+        # rel_mat[:3, 3] = rel_mat2[:3, 3]
         pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
         rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
         rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
@@ -407,6 +387,75 @@ class FrankaChair1Env(DirectRLEnv):
         self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
         self.step_sim_no_action()
 
+
+    def _create_screw_joint(self,connection_idx):
+        stage = omni.usd.get_context().get_stage()
+        if connection_idx == 1:
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw1")
+            joint_path = "/World/envs/env_0/FixedJoint1"
+            connection_cfg = self.cfg_task.connection_cfg1
+        elif connection_idx == 2:
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw2")
+            joint_path = "/World/envs/env_0/FixedJoint2"
+            connection_cfg = self.cfg_task.connection_cfg2
+        elif connection_idx == 3:
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw3")
+            joint_path = "/World/envs/env_0/FixedJoint3"
+            connection_cfg = self.cfg_task.connection_cfg3
+        fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
+        connection_cfg = self._connection_cfg
+
+        to_path = held_prim.GetPath()
+        from_path = fixed_prim.GetPath()
+
+        # 计算关节的相对位姿
+        rel_mat = connection_cfg.pose_to_base
+        pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
+        rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
+        rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
+
+        # 归零 held 和 fixed asset 的速度
+        held_state = self._held_asset.data.default_root_state.clone()
+        held_state[:, 7:] = 0.0
+        self._held_asset.write_root_velocity_to_sim(held_state[:, 7:])
+        self._held_asset.reset()
+        fixed_state = self._fixed_asset.data.default_root_state.clone()
+        fixed_state[:, 7:] = 0.0
+        self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:])
+        self._fixed_asset.reset()
+        self.step_sim_no_action()
+
+        # 创建 D6 Joint，允许 Z 轴旋转和平移
+        joint_path = "/World/envs/env_0/ScrewJoint"
+        d6_joint = UsdPhysics.Joint.Define(stage, joint_path)
+        
+        # 设置 body 关系
+        d6_joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
+        d6_joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
+        
+        # 设置位置和旋转
+        d6_joint.CreateLocalPos0Attr().Set(pos1)
+        d6_joint.CreateLocalRot0Attr().Set(rot1)
+        d6_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
+        d6_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+        prim = d6_joint.GetPrim()
+        for limit_name in ["transX", "transY", "transZ", "rotX", "rotY"]:
+            limit_api = UsdPhysics.LimitAPI.Apply(prim, limit_name)
+            limit_api.CreateLowAttr(0.0)
+            limit_api.CreateHighAttr(0.0)
+
+        for limit_name in ["rotZ"]:
+            limit_api = UsdPhysics.LimitAPI.Apply(prim, limit_name)
+            limit_api.CreateLowAttr(-3.14)
+            limit_api.CreateHighAttr(3.14)  
+        # 保存 joint prim
+        self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
+        for i in range(3):
+            self.step_sim_no_action()
+        self.trigger0 = False
+        self.trigger1 = False
+
+
     def _check_attach_condition(self):
         rel_mat = self._get_real_mat()
         gt_real_mat = self._connection_cfg.pose_to_base
@@ -418,10 +467,10 @@ class FrankaChair1Env(DirectRLEnv):
         print("R_dist:", R_dist)
         print("t_tangent:", t_tangent)
         print("t_normal:", t_normal)
-        print("joint pos:",self.joint_pos[:, 0:7],)
         # print("joint names of frame:",self._fixed_asset.joint_names)
-        if not self.joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.01:
+        if not self.joint_created and R_dist < 0.1 and t_tangent < 0.005 and t_normal < 0.008:
             self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
+            # self._create_screw_joint(connection_idx=self.cfg_task.task_idx)
             self.joint_created = True
             rel_mat = self._get_real_mat()
             gt_real_mat = self._connection_cfg.pose_to_base
@@ -431,7 +480,7 @@ class FrankaChair1Env(DirectRLEnv):
 
 
         elif self.joint_created :
-            print("Fixed joint already created.")
+            print("Joint already created.")
         else:
             print("Not creating fixed joint yet, waiting for conditions to be met.")
 
@@ -447,27 +496,38 @@ class FrankaChair1Env(DirectRLEnv):
         pitch = getattr(self._connection_cfg, "pitch", 0.5)  # 螺距，单位：米/弧度
         dz = float(delta_theta * pitch)  # 螺旋升降量
         print("dz:", dz)
-        if abs(dz) >0.1:
+        if abs(dz) >0.1 and not self.trigger0:
             print("triggering joint limit1")
             prim = self.fixed_joint_prim
             limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
-            limit_api.CreateLowAttr(-0.005)
-            limit_api.CreateHighAttr(0.005)
-        if abs(dz) > 0.15:
+            limit_api.CreateLowAttr(-0.015)
+            limit_api.CreateHighAttr(0.015)
+            self.trigger0 = True
+        elif abs(dz) > 0.2 and not self.trigger1:
             print("triggering joint limit2")
             prim = self.fixed_joint_prim
             limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
-            limit_api.CreateLowAttr(-0.01)
-            limit_api.CreateHighAttr(0.01)
+            limit_api.CreateLowAttr(-0.03)
+            limit_api.CreateHighAttr(0.03)
+            self.trigger1 = True
 
 
+    def _visualize_markers(self):
+        # offset markers so they are above the jetbot
+        loc = self.marker_locations
+        rots = self.marker_orientations
 
+        # render the markers
+        all_envs = torch.arange(self.num_envs)
+        indices = torch.zeros_like(all_envs)
+        self.visualization_markers.visualize(loc, rots, marker_indices=indices)
 
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
+        self._visualize_markers()
         self._check_attach_condition()
-        # if self.joint_created and self.cfg_task.task_idx == 4:
-        #     self._sync_held_asset()
+        if self.joint_created:
+            self._sync_held_asset()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
@@ -617,7 +677,7 @@ class FrankaChair1Env(DirectRLEnv):
         is_centered = torch.where(xy_dist < 0.0025, torch.ones_like(curr_successes), torch.zeros_like(curr_successes))
         # Height threshold to target
         fixed_cfg = self.cfg_task.fixed_asset_cfg
-        if self.cfg_task.name == "peg_insert" or self.cfg_task.name == "gear_mesh" or self.cfg_task.name == "chair_assembly":
+        if self.cfg_task.name == "peg_insert" or self.cfg_task.name == "gear_mesh" or self.cfg_task.name == "vasskar_assembly":
             height_threshold = fixed_cfg.height * success_threshold
         elif self.cfg_task.name == "nut_thread":
             height_threshold = fixed_cfg.thread_pitch * success_threshold
@@ -779,18 +839,21 @@ class FrankaChair1Env(DirectRLEnv):
 
     def get_handheld_asset_relative_pose(self):
         """Get default relative pose between help asset and fingertip."""
-        if self.cfg_task.name == "chair_assembly" and self.cfg_task.task_idx in [1, 2, 4, 5]:
+        if self.cfg_task.name == "vasskar_assembly" and self.cfg_task.task_idx in [1, 2]:
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
             held_asset_relative_pos[:, 2] = self.cfg_task.held_asset_cfg.height
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
-        elif self.cfg_task.name == "chair_assembly" and self.cfg_task.task_idx == 3:
+            held_asset_relative_pos[:, 2] += 0.0
+            held_asset_relative_pos[:, 1] -= 0.01
+            held_asset_relative_pos[:, 0] = 0.12
+
+        elif self.cfg_task.name == "vasskar_assembly" and self.cfg_task.task_idx in [3]:
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
-            held_asset_relative_pos[:, 2] = self.cfg_task.backrest_asset_cfg.height
+            held_asset_relative_pos[:, 2] = self.cfg_task.fixed_asset_cfg.height
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
-            held_asset_relative_pos[:, 0] = -0.07
-            #1是沿手掌平面
-            held_asset_relative_pos[:, 1] = -0.01
-            # held_asset_relative_pos[:, 2] = 0.05
+            held_asset_relative_pos[:, 2] += 0.0
+            held_asset_relative_pos[:, 1] -= 0.04
+            held_asset_relative_pos[:, 0] -= 0.165
         else:
             raise NotImplementedError("Task not implemented")
 
@@ -821,6 +884,7 @@ class FrankaChair1Env(DirectRLEnv):
         self.scene.update(dt=self.physics_dt)
         self._compute_intermediate_values(dt=self.physics_dt)
 
+
     def randomize_initial_state(self, env_ids):
         """Randomize initial state and perform any episode-level randomization."""
 
@@ -831,7 +895,7 @@ class FrankaChair1Env(DirectRLEnv):
         fixed_state = self._fixed_asset.data.default_root_state.clone()[env_ids]
         # (1.a.) Position
         rand_sample = torch.rand((len(env_ids), 3), dtype=torch.float32, device=self.device)
-        fixed_pos_init_rand = 2 * (rand_sample - 0.5)  # [-1, 1]
+        fixed_pos_init_rand = 0.0 * (rand_sample - 0.5)  # [-1, 1]
         fixed_asset_init_pos_rand = torch.tensor(
             self.cfg_task.fixed_asset_init_pos_noise, dtype=torch.float32, device=self.device
         )
@@ -863,7 +927,7 @@ class FrankaChair1Env(DirectRLEnv):
         self.step_sim_no_action()
 
 
-        if self.cfg_task.task_idx in [1,2,4,5]:
+        if self.cfg_task.task_idx ==1:
             fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
             fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
             fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
@@ -874,21 +938,40 @@ class FrankaChair1Env(DirectRLEnv):
             self.fixed_pos_obs_frame[:] = fixed_tip_pos
             rela_trans = fixed_tip_pos.clone()
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
-            rela_trans[:, 1] += 0.42
-            rela_trans[:, 0] -= 0.01
-
-
-        elif self.cfg_task.task_idx == 3:
-            backrest_tip_pos_local = torch.zeros_like(self.held_pos)
-            backrest_tip_pos_local[:, 2] += self.cfg_task.backrest_asset_cfg.base_height
-            backrest_tip_quat_local = (
-            torch.tensor([1.0, 0.0, 1.0, 0.0], device=self.device).unsqueeze(0).repeat(self.num_envs, 1))
-            _, backrest_tip_pos = torch_utils.tf_combine(
-                self.held_quat, self.held_pos, backrest_tip_quat_local, backrest_tip_pos_local
-            )
-            rela_trans = backrest_tip_pos.clone()
+            rela_trans[:, 2] += 0.11
+            rela_trans[:, 1] += 0.04
             rela_trans[:, 0] -= 0.12
-            rela_trans[:, 1] -= 0.25
+
+        if self.cfg_task.task_idx ==2:
+            fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
+
+            _, fixed_tip_pos = torch_utils.tf_combine(
+                self.fixed_quat, self.fixed_pos, self.identity_quat, fixed_tip_pos_local
+            )
+            self.fixed_pos_obs_frame[:] = fixed_tip_pos
+            rela_trans = fixed_tip_pos.clone()
+            rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
+            rela_trans[:, 2] += 0.11
+            rela_trans[:, 1] += 0.21
+            rela_trans[:, 0] -= 0.12
+
+
+        if self.cfg_task.task_idx ==3:
+            fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
+
+            _, fixed_tip_pos = torch_utils.tf_combine(
+                self.fixed_quat, self.fixed_pos, self.identity_quat, fixed_tip_pos_local
+            )
+            self.fixed_pos_obs_frame[:] = fixed_tip_pos
+            rela_trans = fixed_tip_pos.clone()
+            rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
+            rela_trans[:, 2] += 0.12
+            rela_trans[:, 1] += 0.04
+            rela_trans[:, 0] -= 0.16
 
 
         # (2) Move gripper to randomizes location above fixed asset. Keep trying until IK succeeds.
@@ -913,7 +996,7 @@ class FrankaChair1Env(DirectRLEnv):
             )
 
             rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
-            above_fixed_orn_noise = 2 * (rand_sample - 0.5)  # [-1, 1]
+            above_fixed_orn_noise = 0.01 * (rand_sample - 0.5)  # [-1, 1]
             hand_init_orn_rand = torch.tensor(self.cfg_task.hand_init_orn_noise, device=self.device)
             above_fixed_orn_noise = above_fixed_orn_noise @ torch.diag(hand_init_orn_rand)
             hand_down_euler += above_fixed_orn_noise
@@ -921,7 +1004,8 @@ class FrankaChair1Env(DirectRLEnv):
             hand_down_quat[bad_envs, :] = torch_utils.quat_from_euler_xyz(
                 roll=hand_down_euler[:, 0], pitch=hand_down_euler[:, 1], yaw=hand_down_euler[:, 2]
             )
-
+            self.marker_locations[bad_envs, ...] = rela_trans[bad_envs, ...]
+            self.marker_orientations[bad_envs, ...] = hand_down_quat[bad_envs, :]
             # (c) iterative IK Method
             self.ctrl_target_fingertip_midpoint_pos[bad_envs, ...] = rela_trans[bad_envs, ...]
             self.ctrl_target_fingertip_midpoint_quat[bad_envs, ...] = hand_down_quat[bad_envs, :]
@@ -941,22 +1025,46 @@ class FrankaChair1Env(DirectRLEnv):
             )
 
             ik_attempt += 1
+            if ik_attempt >= 10:
+                print("IK failed to find solution, resetting to default pose.")
+                break
 
         self.step_sim_no_action()
 
         if self.cfg_task.task_idx == 2:
-            self._create_fixed_joint(connection_idx=1)
+            # self._create_fixed_joint(connection_idx=1)
+            connection_cfg = self.cfg_task.connection_cfg1_fix
+            rel_R = connection_cfg.pose_to_base[:3,:3]
+            rel_q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_R, device=self.device, dtype=torch.float32)).to(self.device)
+            rel_t = torch.tensor(connection_cfg.pose_to_base[:3, 3], device = self.device, dtype=torch.float32)
+            print(self.fixed_quat.device, self.fixed_pos.device, rel_q.device, rel_t.device)
+            abs_R, abs_t = torch_utils.tf_combine(
+                q1=self.fixed_quat,
+                t1=self.fixed_pos,
+                q2=rel_q.unsqueeze(0).repeat(self.num_envs, 1),
+                t2=rel_t.unsqueeze(0).repeat(self.num_envs, 1),
+            )
+            abs_t[:] = torch.tensor(([-0.1408,-0.10, 0.755]))
+            abs_R[:] = torch.tensor(([0.5, -0.5, -0.5, -0.5]))
+            top1_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
+            self._top1.write_root_pose_to_sim(top1_state)
+            self._top1.reset()
 
         elif self.cfg_task.task_idx == 3:
-            self._create_fixed_joint(connection_idx=1)
-            self._create_fixed_joint(connection_idx=2)
+            abs_t = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+            abs_R = torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.device)
+            abs_t[:] = torch.tensor(([-0.1408,-0.10, 0.755]))
+            abs_R[:] = torch.tensor(([0.5, -0.5, -0.5, -0.5]))
+            top1_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
+            self._top1.write_root_pose_to_sim(top1_state)
+            self._top1.reset()
+            abs_t[:] = torch.tensor(([-0.1408,0.08, 0.755]))
+            abs_R[:] = torch.tensor(([0.5, -0.5, -0.5, -0.5]))
+            top2_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
+            self._top2.write_root_pose_to_sim(top2_state)
+            self._top2.reset()
 
-        elif self.cfg_task.task_idx == 4:
-            self._create_fixed_joint(connection_idx=3)
 
-        if self.cfg_task.task_idx == 5:
-            self._create_fixed_joint(connection_idx=3)
-            self._create_fixed_joint(connection_idx=4)
 
         # (3) Randomize asset-in-gripper location.
         # flip gripper z orientation
@@ -991,13 +1099,22 @@ class FrankaChair1Env(DirectRLEnv):
             t2=self.held_asset_pos_noise,
         )
 
-        if self.cfg_task.task_idx == 3:
-            rot_euler = torch.tensor([0.0, -1.5707, 1.5707], device=self.device).repeat(
+        if self.cfg_task.task_idx in [1, 2]:
+            rot_euler = torch.tensor([1.5707, -1.5707, 0.0], device=self.device).repeat(
             self.num_envs, 1
             )
             translated_held_asset_quat = torch_utils.quat_from_euler_xyz(
                 roll=rot_euler[:, 0], pitch=rot_euler[:, 1], yaw=rot_euler[:, 2]
             )
+
+        if self.cfg_task.task_idx in [3]:
+            rot_euler = torch.tensor([0, 0.0, 0.0], device=self.device).repeat(
+            self.num_envs, 1
+            )
+            translated_held_asset_quat = torch_utils.quat_from_euler_xyz(
+                roll=rot_euler[:, 0], pitch=rot_euler[:, 1], yaw=rot_euler[:, 2]
+            )
+
         held_state = self._held_asset.data.default_root_state.clone()
         held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
         held_state[:, 3:7] = translated_held_asset_quat

@@ -20,7 +20,7 @@ from isaaclab.utils.math import axis_angle_from_quat
 
 from . import factory_control as fc
 from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChair4Cfg
-from .np_tasks_cfg import ChairAssembly1, ConnectionCfg
+from .chair_tasks_cfg import ChairAssembly1, ConnectionCfg
 from pdb import set_trace as bp
 from .np_utils.group_utils import SE3dist
 from scipy.spatial.transform import Rotation as R

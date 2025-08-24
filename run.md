@@ -158,3 +158,32 @@ TODO:
   /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/chair_all.urdf \
   /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/chair_all.usd \
   --collision-approximation sdf
+
+
+./isaaclab.sh -p scripts/tools/convert_mesh.py \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/top.obj \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/top.usd \
+  --collision-approximation sdf \
+  --mass 0.01
+
+./isaaclab.sh -p scripts/tools/convert_mesh.py \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/frame.obj \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/frame.usd \
+  --collision-approximation sdf \
+  --mass 0.01
+
+./isaaclab.sh -p scripts/tools/convert_mesh.py \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/vasskar_all.obj \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/vasskar_all.usd \
+  --collision-approximation sdf \
+  --mass 0.01
+
+./isaaclab.sh -p scripts/tools/convert_mesh.py \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/screw.obj \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/screw.usd \
+  --collision-approximation sdf \
+  --mass 0.01
+
+
+!!! when importing fixed asset (represented as articulation), turn the 'articulation_props' in convert_mesh.py to None, and manually add artuculation_root in GUI
+!!! when importing held asset (RigidObject), turn on the 'articulation_props' in convert_mesh.py
