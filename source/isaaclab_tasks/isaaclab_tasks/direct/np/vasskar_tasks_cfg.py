@@ -115,7 +115,7 @@ class VasskarAll(FixedAssetCfg):
 
 @configclass
 class VasskarTop(HeldAssetCfg):
-    usd_path = f"{VASSKAR_ASSET_DIR}/top.usd"
+    usd_path = f"{VASSKAR_ASSET_DIR}/top_re.usd"
     diameter = 0.0081
     height = 0.38
     mass = 0.05
@@ -139,7 +139,7 @@ class VasskarAssembly1(FactoryTask):
     #! crtie: task 2 is "the second top frame",
     #! crtie: task 3 is "the side frame".,
 
-    task_idx = 3
+    task_idx = 1
 
 
     name = "vasskar_assembly"
@@ -234,7 +234,8 @@ class VasskarAssembly1(FactoryTask):
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
-                                                             collision_enabled=False),
+                                                             collision_enabled=(task_idx in [1,3])),
+                                                            
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -261,7 +262,7 @@ class VasskarAssembly1(FactoryTask):
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
-                                                             collision_enabled=False),
+                                                             collision_enabled=(task_idx in [2,3])),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -293,45 +294,43 @@ class VasskarAssembly1(FactoryTask):
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
 
-
-
     connection_cfg1: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/Screw1",
+        connector_path = "/World/envs/env_.*/TopFrame1",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0, 0.020],
-            [0.0, 0.0, 1.0, 0.074],
-            [0.0, 1.0, 0.0, -0.220],
+            [[0.0, 0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0, 0.03],
+            [0.0, -1.0, 0.0, -0.0165],
             [0.0, 0.0, 0.0, 1.0]]),
-        axis_r = np.array([0.0, 1.0, 0.0]),
-        axis_t = np.array([0.0, 1.0, 0.0]),
+        # axis_r = np.array([0.0, 0.0, 1.0]),
+        axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
     connection_cfg1_fix: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/Screw1",
+        connector_path = "/World/envs/env_.*/TopFrame1",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0, 0.0124],
-            [0.0, 0.0, 1.0, 0.26],
-            [0.0, 1.0, 0.0, -0.252],
+            [[0.0, -1.0, 0.0, 0.3],
+            [0.0, 0.0, -1.0, 0.03],
+            [1.0, 0.0, 0.0, -0.416],
             [0.0, 0.0, 0.0, 1.0]]),
-        axis_r = np.array([0.0, 1.0, 0.0]),
-        axis_t = np.array([0.0, 1.0, 0.0]),
+        # axis_r = np.array([0.0, 0.0, 1.0]),
+        axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
     connection_cfg2: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/Screw2",
+        connector_path = "/World/envs/env_.*/TopFrame2",
         pose_to_base = np.array(
             [[-1.0, 0.0, 0.0, 0.273],
             [0.0, 0.0, 1.0, 0.277],
             [0.0, 1.0, 0.0, -0.2595],
             [0.0, 0.0, 0.0, 1.0]]),
-        axis_r = np.array([0.0, 1.0, 0.0]),
-        axis_t = np.array([0.0, 1.0, 0.0]),
+        # axis_r = np.array([0.0, 0.0, 1.0]),
+        axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
 

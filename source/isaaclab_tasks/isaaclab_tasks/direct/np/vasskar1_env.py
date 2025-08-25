@@ -388,74 +388,6 @@ class FrankaVasskar1Env(DirectRLEnv):
         self.step_sim_no_action()
 
 
-    def _create_screw_joint(self,connection_idx):
-        stage = omni.usd.get_context().get_stage()
-        if connection_idx == 1:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw1")
-            joint_path = "/World/envs/env_0/FixedJoint1"
-            connection_cfg = self.cfg_task.connection_cfg1
-        elif connection_idx == 2:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw2")
-            joint_path = "/World/envs/env_0/FixedJoint2"
-            connection_cfg = self.cfg_task.connection_cfg2
-        elif connection_idx == 3:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw3")
-            joint_path = "/World/envs/env_0/FixedJoint3"
-            connection_cfg = self.cfg_task.connection_cfg3
-        fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
-        connection_cfg = self._connection_cfg
-
-        to_path = held_prim.GetPath()
-        from_path = fixed_prim.GetPath()
-
-        # 计算关节的相对位姿
-        rel_mat = connection_cfg.pose_to_base
-        pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
-        rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
-        rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
-
-        # 归零 held 和 fixed asset 的速度
-        held_state = self._held_asset.data.default_root_state.clone()
-        held_state[:, 7:] = 0.0
-        self._held_asset.write_root_velocity_to_sim(held_state[:, 7:])
-        self._held_asset.reset()
-        fixed_state = self._fixed_asset.data.default_root_state.clone()
-        fixed_state[:, 7:] = 0.0
-        self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:])
-        self._fixed_asset.reset()
-        self.step_sim_no_action()
-
-        # 创建 D6 Joint，允许 Z 轴旋转和平移
-        joint_path = "/World/envs/env_0/ScrewJoint"
-        d6_joint = UsdPhysics.Joint.Define(stage, joint_path)
-        
-        # 设置 body 关系
-        d6_joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
-        d6_joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
-        
-        # 设置位置和旋转
-        d6_joint.CreateLocalPos0Attr().Set(pos1)
-        d6_joint.CreateLocalRot0Attr().Set(rot1)
-        d6_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
-        d6_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
-        prim = d6_joint.GetPrim()
-        for limit_name in ["transX", "transY", "transZ", "rotX", "rotY"]:
-            limit_api = UsdPhysics.LimitAPI.Apply(prim, limit_name)
-            limit_api.CreateLowAttr(0.0)
-            limit_api.CreateHighAttr(0.0)
-
-        for limit_name in ["rotZ"]:
-            limit_api = UsdPhysics.LimitAPI.Apply(prim, limit_name)
-            limit_api.CreateLowAttr(-3.14)
-            limit_api.CreateHighAttr(3.14)  
-        # 保存 joint prim
-        self.fixed_joint_prim = stage.GetPrimAtPath(joint_path)
-        for i in range(3):
-            self.step_sim_no_action()
-        self.trigger0 = False
-        self.trigger1 = False
-
-
     def _check_attach_condition(self):
         rel_mat = self._get_real_mat()
         gt_real_mat = self._connection_cfg.pose_to_base
@@ -484,34 +416,6 @@ class FrankaVasskar1Env(DirectRLEnv):
         else:
             print("Not creating fixed joint yet, waiting for conditions to be met.")
 
-    def _sync_held_asset(self):
-        # 1. 获取当前相对位姿和目标相对位姿
-        rel_mat = self._get_real_mat()  # 当前 held 相对 fixed 的4x4矩阵
-        gt_real_mat = self._connection_cfg.pose_to_base  # 目标相对位姿
-
-        R_dist, R_axis, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
-        delta_theta = R_axis - self.R_axis  # 计算旋转轴的变化量
-
-        # 5. 根据螺距 pitch 计算z方向的位移
-        pitch = getattr(self._connection_cfg, "pitch", 0.5)  # 螺距，单位：米/弧度
-        dz = float(delta_theta * pitch)  # 螺旋升降量
-        print("dz:", dz)
-        if abs(dz) >0.1 and not self.trigger0:
-            print("triggering joint limit1")
-            prim = self.fixed_joint_prim
-            limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
-            limit_api.CreateLowAttr(-0.015)
-            limit_api.CreateHighAttr(0.015)
-            self.trigger0 = True
-        elif abs(dz) > 0.2 and not self.trigger1:
-            print("triggering joint limit2")
-            prim = self.fixed_joint_prim
-            limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
-            limit_api.CreateLowAttr(-0.03)
-            limit_api.CreateHighAttr(0.03)
-            self.trigger1 = True
-
-
     def _visualize_markers(self):
         # offset markers so they are above the jetbot
         loc = self.marker_locations
@@ -526,8 +430,6 @@ class FrankaVasskar1Env(DirectRLEnv):
         """Apply policy actions with smoothing."""
         self._visualize_markers()
         self._check_attach_condition()
-        if self.joint_created:
-            self._sync_held_asset()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
@@ -1032,23 +934,7 @@ class FrankaVasskar1Env(DirectRLEnv):
         self.step_sim_no_action()
 
         if self.cfg_task.task_idx == 2:
-            # self._create_fixed_joint(connection_idx=1)
-            connection_cfg = self.cfg_task.connection_cfg1_fix
-            rel_R = connection_cfg.pose_to_base[:3,:3]
-            rel_q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_R, device=self.device, dtype=torch.float32)).to(self.device)
-            rel_t = torch.tensor(connection_cfg.pose_to_base[:3, 3], device = self.device, dtype=torch.float32)
-            print(self.fixed_quat.device, self.fixed_pos.device, rel_q.device, rel_t.device)
-            abs_R, abs_t = torch_utils.tf_combine(
-                q1=self.fixed_quat,
-                t1=self.fixed_pos,
-                q2=rel_q.unsqueeze(0).repeat(self.num_envs, 1),
-                t2=rel_t.unsqueeze(0).repeat(self.num_envs, 1),
-            )
-            abs_t[:] = torch.tensor(([-0.1408,-0.10, 0.755]))
-            abs_R[:] = torch.tensor(([0.5, -0.5, -0.5, -0.5]))
-            top1_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
-            self._top1.write_root_pose_to_sim(top1_state)
-            self._top1.reset()
+            self._create_fixed_joint(connection_idx=1)
 
         elif self.cfg_task.task_idx == 3:
             abs_t = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
