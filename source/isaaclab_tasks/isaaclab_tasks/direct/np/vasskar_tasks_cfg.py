@@ -106,6 +106,14 @@ class VasskarFrame(FixedAssetCfg):
     base_height = 0.0
 
 @configclass
+class VasskarFrame2(FixedAssetCfg):
+    usd_path = f"{VASSKAR_ASSET_DIR}/frame3.usd"
+    diameter = 0.04
+    height = -0.005
+    mass = 0.01
+    base_height = 0.0
+
+@configclass
 class VasskarAll(FixedAssetCfg):
     usd_path = f"{VASSKAR_ASSET_DIR}/vasskar_all_2.usd"
     diameter = 0.03
@@ -145,6 +153,7 @@ class VasskarAssembly1(FactoryTask):
     name = "vasskar_assembly"
     fixed_asset_cfg = VasskarFrame()
     held_asset_cfg = VasskarTop()
+    frame2_cfg = VasskarFrame2()
     plug_config = Screw()
     asset_size = 8.0
     duration_s = 10.0
@@ -272,7 +281,7 @@ class VasskarAssembly1(FactoryTask):
     frame2: RigidObjectCfg = RigidObjectCfg(
         prim_path="/World/envs/env_.*/SideFrame",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=fixed_asset_cfg.usd_path,
+            usd_path=frame2_cfg.usd_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
                 max_depenetration_velocity=5.0,
@@ -345,6 +354,19 @@ class VasskarAssembly1(FactoryTask):
             [[0.0, -1.0, 0.0, 0.3],
             [0.0, 0.0, -1.0, 0.21],
             [1.0, 0.0, 0.0, -0.416],
+            [0.0, 0.0, 0.0, 1.0]]),
+        # axis_r = np.array([0.0, 0.0, 1.0]),
+        axis_t = np.array([0.0, 0.0, 1.0]),
+    )
+
+    connection_cfg3: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/SideFrame",
+        pose_to_base = np.array(
+            [[-1.0, 0.0, 0.0, 0.3],
+            [0.0, 1.0, 0.0, 0.001],
+            [0.0, 0.0, -1.0, -0.432],
             [0.0, 0.0, 0.0, 1.0]]),
         # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),

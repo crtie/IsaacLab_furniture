@@ -185,7 +185,7 @@ class FrankaVasskar1Env(DirectRLEnv):
             self._top2 = RigidObject(self.cfg_task.top2)
             self._frame2 = RigidObject(self.cfg_task.frame2)
             self._held_asset = self._frame2
-            self._connection_cfg = self.cfg_task.connection_cfg2
+            self._connection_cfg = self.cfg_task.connection_cfg3
         
 
         self.scene.clone_environments(copy_from_source=False)
@@ -359,6 +359,11 @@ class FrankaVasskar1Env(DirectRLEnv):
             joint_path = "/World/envs/env_0/FixedJoint2"
             connection_cfg = self.cfg_task.connection_cfg2_fix
 
+        elif connection_idx == 3:
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/SideFrame")
+            joint_path = "/World/envs/env_0/FixedJoint3"
+            connection_cfg = self.cfg_task.connection_cfg3
+
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
         
 
@@ -401,7 +406,8 @@ class FrankaVasskar1Env(DirectRLEnv):
         print("t_normal:", t_normal)
         # print("joint names of frame:",self._fixed_asset.joint_names)
         if not self.joint_created and R_dist < 0.1 and t_tangent < 0.005 and t_normal < 0.008:
-            # self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
+            if self.cfg_task.task_idx == 3:
+                self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
             # self._create_screw_joint(connection_idx=self.cfg_task.task_idx)
             self.joint_created = True
             rel_mat = self._get_real_mat()
@@ -754,7 +760,7 @@ class FrankaVasskar1Env(DirectRLEnv):
             held_asset_relative_pos[:, 2] = self.cfg_task.fixed_asset_cfg.height
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
             held_asset_relative_pos[:, 2] += 0.0
-            held_asset_relative_pos[:, 1] -= 0.04
+            held_asset_relative_pos[:, 1] -= 0.22
             held_asset_relative_pos[:, 0] -= 0.159
         else:
             raise NotImplementedError("Task not implemented")
@@ -872,7 +878,7 @@ class FrankaVasskar1Env(DirectRLEnv):
             rela_trans = fixed_tip_pos.clone()
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
             rela_trans[:, 2] += 0.16
-            rela_trans[:, 1] += 0.04
+            rela_trans[:, 1] += 0.22
             rela_trans[:, 0] -= 0.16
 
 

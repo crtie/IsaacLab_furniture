@@ -117,12 +117,12 @@ def main():
     # Collision properties
     collision_props = schemas_cfg.CollisionPropertiesCfg(collision_enabled=args_cli.collision_approximation != "none")
 
-    # Articulation root properties
-    # articulation_props = schemas_cfg.ArticulationRootPropertiesCfg(
-    #     enabled_self_collisions=True,
-    #     fix_root_link=True, 
-    # )
-    articulation_props = None
+    # !Articulation root properties
+    articulation_props = schemas_cfg.ArticulationRootPropertiesCfg(
+        enabled_self_collisions=True,
+        fix_root_link=True, 
+    )
+    # articulation_props = None
 
     # Create Mesh converter config
     mesh_converter_cfg = MeshConverterCfg(

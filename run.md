@@ -161,14 +161,14 @@ TODO:
 
 
 ./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/top.obj \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/top.usd \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/top_re.obj \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/top_re.usd \
   --collision-approximation sdf \
   --mass 0.01
 
 ./isaaclab.sh -p scripts/tools/convert_mesh.py \
   /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/frame.obj \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/frame.usd \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/frame3.usd \
   --collision-approximation sdf \
   --mass 0.01
 
