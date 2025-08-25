@@ -28,7 +28,7 @@ class HeldAssetCfg:
     usd_path: str = ""
     diameter: float = 0.0  # Used for gripper width.
     height: float = 0.0
-    friction: float = 0.75
+    friction: float = 5.0
     mass: float = 0.05
 
 
@@ -36,7 +36,7 @@ class HeldAssetCfg:
 class RobotCfg:
     robot_usd: str = ""
     franka_fingerpad_length: float = 0.017608
-    friction: float = 5.0
+    friction: float = 10.0
 
 
 @configclass
@@ -100,15 +100,15 @@ class FactoryTask:
 @configclass
 class VasskarFrame(FixedAssetCfg):
     usd_path = f"{VASSKAR_ASSET_DIR}/frame2.usd"
-    diameter = 0.0081
+    diameter = 0.04
     height = -0.005
-    mass = 0.05
+    mass = 0.01
     base_height = 0.0
 
 @configclass
 class VasskarAll(FixedAssetCfg):
     usd_path = f"{VASSKAR_ASSET_DIR}/vasskar_all_2.usd"
-    diameter = 0.0081
+    diameter = 0.03
     height = -0.005
     mass = 0.05
     base_height = 0.0
@@ -139,7 +139,7 @@ class VasskarAssembly1(FactoryTask):
     #! crtie: task 2 is "the second top frame",
     #! crtie: task 3 is "the side frame".,
 
-    task_idx = 1
+    task_idx = 3
 
 
     name = "vasskar_assembly"
@@ -235,6 +235,7 @@ class VasskarAssembly1(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled=(task_idx in [1,3])),
+                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -263,6 +264,7 @@ class VasskarAssembly1(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled=(task_idx in [2,3])),
+                                                            # collision_enabled = False),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -272,7 +274,7 @@ class VasskarAssembly1(FactoryTask):
         spawn=sim_utils.UsdFileCfg(
             usd_path=fixed_asset_cfg.usd_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                disable_gravity=True,
+                disable_gravity=False,
                 max_depenetration_velocity=5.0,
                 linear_damping=0.0,
                 angular_damping=0.0,
@@ -288,11 +290,13 @@ class VasskarAssembly1(FactoryTask):
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-3, rest_offset=5e-3,
-                                                             ),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
+                                                              collision_enabled = True),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
+
+
 
     connection_cfg1: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
@@ -325,9 +329,22 @@ class VasskarAssembly1(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/TopFrame2",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0, 0.273],
-            [0.0, 0.0, 1.0, 0.277],
-            [0.0, 1.0, 0.0, -0.2595],
+            [[0.0, 0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0, 0.21],
+            [0.0, -1.0, 0.0, -0.0165],
+            [0.0, 0.0, 0.0, 1.0]]),
+        # axis_r = np.array([0.0, 0.0, 1.0]),
+        axis_t = np.array([0.0, 0.0, 1.0]),
+    )
+
+    connection_cfg2_fix: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/TopFrame2",
+        pose_to_base = np.array(
+            [[0.0, -1.0, 0.0, 0.3],
+            [0.0, 0.0, -1.0, 0.21],
+            [1.0, 0.0, 0.0, -0.416],
             [0.0, 0.0, 0.0, 1.0]]),
         # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),

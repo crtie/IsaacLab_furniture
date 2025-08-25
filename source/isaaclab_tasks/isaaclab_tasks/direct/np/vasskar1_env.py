@@ -357,7 +357,7 @@ class FrankaVasskar1Env(DirectRLEnv):
         elif connection_idx == 2:
             held_prim = stage.GetPrimAtPath("/World/envs/env_0/TopFrame2")
             joint_path = "/World/envs/env_0/FixedJoint2"
-            connection_cfg = self.cfg_task.connection_cfg2
+            connection_cfg = self.cfg_task.connection_cfg2_fix
 
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
         
@@ -401,7 +401,7 @@ class FrankaVasskar1Env(DirectRLEnv):
         print("t_normal:", t_normal)
         # print("joint names of frame:",self._fixed_asset.joint_names)
         if not self.joint_created and R_dist < 0.1 and t_tangent < 0.005 and t_normal < 0.008:
-            self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
+            # self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
             # self._create_screw_joint(connection_idx=self.cfg_task.task_idx)
             self.joint_created = True
             rel_mat = self._get_real_mat()
@@ -528,7 +528,7 @@ class FrankaVasskar1Env(DirectRLEnv):
             roll=target_euler_xyz[:, 0], pitch=target_euler_xyz[:, 1], yaw=target_euler_xyz[:, 2]
         )
 
-        self.ctrl_target_gripper_dof_pos = 0.015 if gripper_actions < 0.0 else 0.0
+        self.ctrl_target_gripper_dof_pos = 0.03 if gripper_actions < 0.0 else 0.0
         self.generate_ctrl_signals()
 
     def _set_gains(self, prop_gains, rot_deriv_scale=1.0):
@@ -755,7 +755,7 @@ class FrankaVasskar1Env(DirectRLEnv):
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
             held_asset_relative_pos[:, 2] += 0.0
             held_asset_relative_pos[:, 1] -= 0.04
-            held_asset_relative_pos[:, 0] -= 0.165
+            held_asset_relative_pos[:, 0] -= 0.159
         else:
             raise NotImplementedError("Task not implemented")
 
@@ -871,7 +871,7 @@ class FrankaVasskar1Env(DirectRLEnv):
             self.fixed_pos_obs_frame[:] = fixed_tip_pos
             rela_trans = fixed_tip_pos.clone()
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
-            rela_trans[:, 2] += 0.12
+            rela_trans[:, 2] += 0.16
             rela_trans[:, 1] += 0.04
             rela_trans[:, 0] -= 0.16
 
@@ -937,18 +937,20 @@ class FrankaVasskar1Env(DirectRLEnv):
             self._create_fixed_joint(connection_idx=1)
 
         elif self.cfg_task.task_idx == 3:
-            abs_t = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
-            abs_R = torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.device)
-            abs_t[:] = torch.tensor(([-0.1408,-0.10, 0.755]))
-            abs_R[:] = torch.tensor(([0.5, -0.5, -0.5, -0.5]))
-            top1_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
-            self._top1.write_root_pose_to_sim(top1_state)
-            self._top1.reset()
-            abs_t[:] = torch.tensor(([-0.1408,0.08, 0.755]))
-            abs_R[:] = torch.tensor(([0.5, -0.5, -0.5, -0.5]))
-            top2_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
-            self._top2.write_root_pose_to_sim(top2_state)
-            self._top2.reset()
+            # abs_t = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+            # abs_R = torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.device)
+            # abs_t[:] = torch.tensor(([-0.1408,-0.10, 0.755]))
+            # abs_R[:] = torch.tensor(([0.5, -0.5, -0.5, -0.5]))
+            # top1_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
+            # self._top1.write_root_pose_to_sim(top1_state)
+            # self._top1.reset()
+            # abs_t[:] = torch.tensor(([-0.1408,0.08, 0.755]))
+            # abs_R[:] = torch.tensor(([0.5, -0.5, -0.5, -0.5]))
+            # top2_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
+            # self._top2.write_root_pose_to_sim(top2_state)
+            # self._top2.reset()
+            self._create_fixed_joint(connection_idx=1)
+            self._create_fixed_joint(connection_idx=2)
 
 
 
@@ -974,7 +976,7 @@ class FrankaVasskar1Env(DirectRLEnv):
 
         # Add asset in hand randomization
         rand_sample = torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device)
-        self.held_asset_pos_noise = 0.001 * (rand_sample - 0.5)  # [-1, 1]
+        self.held_asset_pos_noise = 0.00 * (rand_sample - 0.5)  # [-1, 1]
 
         held_asset_pos_noise = torch.tensor(self.cfg_task.held_asset_pos_noise, device=self.device)
         self.held_asset_pos_noise = self.held_asset_pos_noise @ torch.diag(held_asset_pos_noise)
@@ -1020,7 +1022,7 @@ class FrankaVasskar1Env(DirectRLEnv):
         self.step_sim_no_action()
 
         grasp_time = 0.0
-        while grasp_time < 0.25:
+        while grasp_time < 1:
             self.ctrl_target_joint_pos[env_ids, 7:] = 0.0  # Close gripper.
             self.ctrl_target_gripper_dof_pos = 0.0
             self.close_gripper_in_place()

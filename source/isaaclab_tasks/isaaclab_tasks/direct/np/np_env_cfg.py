@@ -181,7 +181,7 @@ class FactoryEnvCfg(DirectRLEnvCfg):
                 effort_limit=40.0,
                 velocity_limit=0.04,
                 stiffness=7500.0,
-                damping=173.0,
+                damping=500.0,
                 friction=0.1,
                 armature=0.0,
             ),
