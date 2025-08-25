@@ -124,7 +124,7 @@ class VasskarTop(HeldAssetCfg):
 @configclass
 class Screw(HeldAssetCfg):
     usd_path = f"{VASSKAR_ASSET_DIR}/screw.usd"
-    diameter = 0.007986
+    diameter = 0.006
     height = 0.01
     mass = 0.001  # Mass is set to 0.001 to avoid large forces during insertion.
 
@@ -342,8 +342,9 @@ class VasskarAssembly2(FactoryTask):
     #! crtie: task 1 is "the first screw
     #! crtie: task 2 is "the second screw",
     #! crtie: task 3 is "the third screw"
+    #! crtie: task 4 is "the fourth screw".
 
-    task_idx = 1
+    task_idx = 4
 
 
     name = "vasskar_assembly"
@@ -436,7 +437,7 @@ class VasskarAssembly2(FactoryTask):
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3
-                                                             ,),
+                                                             ,collision_enabled=(task_idx==1)),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -464,8 +465,8 @@ class VasskarAssembly2(FactoryTask):
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,)
-                                                             #collision_enabled=False),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3
+                                                             ,collision_enabled=(task_idx==2)),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -487,51 +488,65 @@ class VasskarAssembly2(FactoryTask):
                 max_contact_impulse=1e32,
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
-            scale = np.array([0.6,0.6,0.7]), 
+            scale = np.array([0.4,0.4,0.45]), 
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
+                                                             collision_enabled=(task_idx==3)),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
 
+
+    screw4: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Screw4",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=plug_config.usd_path,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                max_depenetration_velocity=5.0,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_linear_velocity=1000.0,
+                max_angular_velocity=3666.0,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=192,
+                solver_velocity_iteration_count=1, 
+                max_contact_impulse=1e32,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
+            scale = np.array([0.4,0.4,0.45]), 
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                articulation_enabled=False,  # Set to False for RigidObject
+            ),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
+                                                             collision_enabled=(task_idx==4)),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
+    )
 
     connection_cfg1: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Screw1",
         pose_to_base = np.array(
-            [[0.0, 0.0, -1.0, -0.042],
-            [0.0, -1.0, 0.0, 0.287],
-            [-1.0, -0.0, -0.0, -0.223],
+            [[0.0, 0.0, -1.0, -0.037], #z
+            [0.0, -1.0, 0.0, 0.291], 
+            [-1.0, -0.0, -0.0, -0.2175], 
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([1.0, 0.0, 0.0]),
         axis_t = np.array([1.0, 0.0, 0.0]),
     )
-
-    connection_cfg1_fix: ConnectionCfg = ConnectionCfg(
-        connection_type = "plug_connection",
-        base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/Screw1",
-        pose_to_base = np.array(
-            [[0.0, -0.7, 0.7, -0.035],
-            [0.0, 0.7, 0.7, 0.287],
-            [-1.0, -0.0, -0.0, -0.223],
-            [0.0, 0.0, 0.0, 1.0]]),
-        axis_r = np.array([1.0, 0.0, 0.0]),
-        axis_t = np.array([1.0, 0.0, 0.0]),
-    )
-
 
     connection_cfg2: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Screw2",
         pose_to_base = np.array(
-            [[0.0, -1.0, 0.0, -0.035],
-            [0.0, 0.0, 1.0, 0.287],
-            [-1.0, -0.0, -0.0, -0.223],
+            [[0.0, 0.0, -1.0, -0.037], #z
+            [0.0, -1.0, 0.0, 0.291], 
+            [-1.0, -0.0, -0.0, -0.0375], 
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([1.0, 0.0, 0.0]),
         axis_t = np.array([1.0, 0.0, 0.0]),
@@ -542,10 +557,23 @@ class VasskarAssembly2(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Screw3",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0,  0.020],
-            [0.0, 0.0, 1.0,  0.277],
-            [0.0, 1.0, 0.0, -0.498],
-            [ 0.0,  0.0,  0.0,  1.0]]),
-        axis_r = np.array([0.0, 1.0, 0.0]),
-        axis_t = np.array([0.0, 1.0, 0.0]),
+            [[0.0, 0.0, -1.0, -0.037], #z
+            [0.0, -1.0, 0.0, 0.012], 
+            [-1.0, -0.0, -0.0, -0.217], 
+            [0.0, 0.0, 0.0, 1.0]]),
+        axis_r = np.array([1.0, 0.0, 0.0]),
+        axis_t = np.array([1.0, 0.0, 0.0]),
+    )
+
+    connection_cfg4: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/Screw4",
+        pose_to_base = np.array(
+            [[0.0, 0.0, -1.0, -0.037], #z
+            [0.0, -1.0, 0.0, 0.0115], 
+            [-1.0, -0.0, -0.0, -0.0375], 
+            [0.0, 0.0, 0.0, 1.0]]),
+        axis_r = np.array([1.0, 0.0, 0.0]),
+        axis_t = np.array([1.0, 0.0, 0.0]),
     )

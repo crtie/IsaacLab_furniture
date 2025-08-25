@@ -414,6 +414,10 @@ class FrankaVasskar2Env(DirectRLEnv):
             held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw3")
             joint_path = "/World/envs/env_0/FixedJoint3"
             connection_cfg = self.cfg_task.connection_cfg3
+        elif connection_idx == 4:
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Screw4")
+            joint_path = "/World/envs/env_0/FixedJoint4"
+            connection_cfg = self.cfg_task.connection_cfg4
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
         connection_cfg = self._connection_cfg
 
@@ -474,16 +478,16 @@ class FrankaVasskar2Env(DirectRLEnv):
 
         R_dist, R_axis, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
         print("rel_mat:\n", rel_mat)
-        print("gt_real_mat:\n", gt_real_mat)
+        # print("gt_real_mat:\n", gt_real_mat)
         # print("gt_real_mat:", gt_real_mat)
         # bp()
         print("R_dist:", R_dist)
         print("t_tangent:", t_tangent)
         print("t_normal:", t_normal)
         # print("joint names of frame:",self._fixed_asset.joint_names)
-        if not self.joint_created and R_dist < 0.15 and t_tangent < 0.002 and t_normal < 0.008:
-            self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
-            # self._create_screw_joint(connection_idx=self.cfg_task.task_idx)
+        if not self.joint_created and R_dist < 0.15 and t_tangent < 0.002 and t_normal < 0.006:
+            # self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
+            self._create_screw_joint(connection_idx=self.cfg_task.task_idx)
             self.joint_created = True
             rel_mat = self._get_real_mat()
             gt_real_mat = self._connection_cfg.pose_to_base
@@ -513,15 +517,15 @@ class FrankaVasskar2Env(DirectRLEnv):
             print("triggering joint limit1")
             prim = self.fixed_joint_prim
             limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
-            limit_api.CreateLowAttr(-0.015)
-            limit_api.CreateHighAttr(0.015)
+            limit_api.CreateLowAttr(-0.005)
+            limit_api.CreateHighAttr(0.005)
             self.trigger0 = True
         elif abs(dz) > 0.2 and not self.trigger1:
             print("triggering joint limit2")
             prim = self.fixed_joint_prim
             limit_api = UsdPhysics.LimitAPI.Apply(prim, "transZ")
-            limit_api.CreateLowAttr(-0.03)
-            limit_api.CreateHighAttr(0.03)
+            limit_api.CreateLowAttr(-0.01)
+            limit_api.CreateHighAttr(0.01)
             self.trigger1 = True
 
 
@@ -539,8 +543,8 @@ class FrankaVasskar2Env(DirectRLEnv):
         """Apply policy actions with smoothing."""
         # self._visualize_markers()
         self._check_attach_condition()
-        # if self.joint_created:
-        #     self._sync_held_asset()
+        if self.joint_created:
+            self._sync_held_asset()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
@@ -956,11 +960,11 @@ class FrankaVasskar2Env(DirectRLEnv):
             rela_trans = fixed_tip_pos.clone()
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
             rela_trans[:, 2] -= 0.25
-            rela_trans[:, 1] += 0.1
-            rela_trans[:, 0] += 0.27
+            rela_trans[:, 1] += 0.02
+            rela_trans[:, 0] += 0.3
 
 
-        elif self.cfg_task.task_idx == 3:
+        elif self.cfg_task.task_idx ==3:
             fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
             fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
             fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
@@ -971,7 +975,23 @@ class FrankaVasskar2Env(DirectRLEnv):
             self.fixed_pos_obs_frame[:] = fixed_tip_pos
             rela_trans = fixed_tip_pos.clone()
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
-            rela_trans[:, 1] += 0.5
+            rela_trans[:, 2] -= 0.25
+            rela_trans[:, 1] += 0.20
+            rela_trans[:, 0] += 0.0
+
+        elif self.cfg_task.task_idx ==4:
+            fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
+
+            _, fixed_tip_pos = torch_utils.tf_combine(
+                self.fixed_quat, self.fixed_pos, self.identity_quat, fixed_tip_pos_local
+            )
+            self.fixed_pos_obs_frame[:] = fixed_tip_pos
+            rela_trans = fixed_tip_pos.clone()
+            rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
+            rela_trans[:, 2] -= 0.25
+            rela_trans[:, 1] += 0.02
             rela_trans[:, 0] += 0.0
 
 
@@ -1033,46 +1053,17 @@ class FrankaVasskar2Env(DirectRLEnv):
         self.step_sim_no_action()
 
         if self.cfg_task.task_idx == 2:
-            # self._create_fixed_joint(connection_idx=1)
-            connection_cfg = self.cfg_task.connection_cfg1_fix
-            rel_R = connection_cfg.pose_to_base[:3,:3]
-            rel_q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_R, device=self.device, dtype=torch.float32)).to(self.device)
-            rel_t = torch.tensor(connection_cfg.pose_to_base[:3, 3], device = self.device, dtype=torch.float32)
-            abs_R, abs_t = torch_utils.tf_combine(
-                q1=self.fixed_quat,
-                t1=self.fixed_pos,
-                q2=rel_q.unsqueeze(0).repeat(self.num_envs, 1),
-                t2=rel_t.unsqueeze(0).repeat(self.num_envs, 1),
-            )
-            abs_t[:] = torch.tensor(([0.1444,-0.033,1.20]))
-            abs_R[:] = torch.tensor(([1,0,0,0]))
-            screw1_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
-            self._screw1.write_root_pose_to_sim(screw1_state)
-            self._screw1.reset()
+            self._create_fixed_joint(connection_idx=1)
 
         elif self.cfg_task.task_idx == 3:
-            connection_cfg = self.cfg_task.connection_cfg1_fix
-            rel_R = connection_cfg.pose_to_base[:3,:3]
-            rel_q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_R, device=self.device, dtype=torch.float32)).to(self.device)
-            rel_t = torch.tensor(connection_cfg.pose_to_base[:3, 3], device = self.device, dtype=torch.float32)
-            print(self.fixed_quat.device, self.fixed_pos.device, rel_q.device, rel_t.device)
-            abs_R, abs_t = torch_utils.tf_combine(
-                q1=self.fixed_quat,
-                t1=self.fixed_pos,
-                q2=rel_q.unsqueeze(0).repeat(self.num_envs, 1),
-                t2=rel_t.unsqueeze(0).repeat(self.num_envs, 1),
-            )
-            abs_t[:] = torch.tensor(([-0.1476,-0.048,1.0]))
-            abs_R[:] = torch.tensor(([1,0,0,0]))
-            screw1_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
-            self._screw1.write_root_pose_to_sim(screw1_state)
-            self._screw1.reset()
+            self._create_fixed_joint(connection_idx=1)
+            self._create_fixed_joint(connection_idx=2)
 
-            abs_t[:] = torch.tensor(([0.110,-0.049,1.0]))
-            abs_R[:] = torch.tensor(([1,0,0,0]))
-            screw2_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
-            self._screw2.write_root_pose_to_sim(screw2_state)
-            self._screw2.reset()
+        elif self.cfg_task.task_idx == 4:
+            self._create_fixed_joint(connection_idx=1)
+            self._create_fixed_joint(connection_idx=2)
+            self._create_fixed_joint(connection_idx=3)
+
 
         # (3) Randomize asset-in-gripper location.
         # flip gripper z orientation
@@ -1096,7 +1087,7 @@ class FrankaVasskar2Env(DirectRLEnv):
 
         # Add asset in hand randomization
         rand_sample = torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device)
-        self.held_asset_pos_noise = 0.001 * (rand_sample - 0.5)  # [-1, 1]
+        self.held_asset_pos_noise = 0.0 * (rand_sample - 0.5)  # [-1, 1]
 
         held_asset_pos_noise = torch.tensor(self.cfg_task.held_asset_pos_noise, device=self.device)
         self.held_asset_pos_noise = self.held_asset_pos_noise @ torch.diag(held_asset_pos_noise)
