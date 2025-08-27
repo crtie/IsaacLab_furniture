@@ -1,7 +1,7 @@
 $conda activate env_isaaclab
 
 
-$ python scripts/environments/zero_agent.py --task Isaac-Franka-Chair6-Direct-v0 --num_envs 1 --disable_fabric
+$ python scripts/environments/zero_agent.py --task Isaac-Franka-Plane1-Direct-v0 --num_envs 1 --disable_fabric
 
 $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
   /home/crtie/crtie/Manual2Skill2/chair_real/frame.obj \
@@ -59,100 +59,13 @@ $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
 
 
 
-./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/crtie/crtie/Manual2Skill2/chair_real/rod.obj \
-  /home/crtie/crtie/Manual2Skill2/chair_real/rod.usd \
-  --collision-approximation sdf \
-  --mass 0.1
-
-
-$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Franka-Chair5-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
+$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Franka-Plane1-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
 
 
 $ python scripts/reinforcement_learning/rl_games/train.py --task Isaac-Factory-NutThread-Direct-v0 --num_envs 128 --headless
 
 $ python scripts/reinforcement_learning/rl_games/play.py --task Isaac-Factory-NutThread-Direct-v0 --checkpoint logs/rl_games/Factory/test/nn/Factory.pth
 
-TODO:
-1. integrate the created joints into original articulation class
-
-./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/crtie/crtie/Manual2Skill2/chair_real/screw_ree.obj \
-  /home/crtie/crtie/Manual2Skill2/chair_real/screw_ree3.usd \
-  --collision-approximation sdf \
-  --mass 0.01
-
-./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame_re.obj \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame_re.usd \
-  --collision-approximation sdf \
-  --mass 1.0
-
-
-./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/crtie/crtie/Manual2Skill2/chair_real/rod.obj \
-  /home/crtie/crtie/Manual2Skill2/chair_real/rod6.usd \
-  --make-instanceable \
-  --collision-approximation sdf \
-  --mass 0.01
-
-
-./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/crtie/crtie/Manual2Skill2/chair_real/backrest.obj \
-  /home/crtie/crtie/Manual2Skill2/chair_real/backrest3.usd \
-  --collision-approximation sdf \
-  --mass 0.01
-
-
-./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame_back.obj \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame_back.usd \
-  --collision-approximation sdf \
-  --mass 0.01
-
-
-./isaaclab.sh -p scripts/tools/convert_urdf.py \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame_back.urdf \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame_back.usd \
-  --collision-approximation sdf
-
-
-./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/crtie/crtie/Manual2Skill2/chair_real/rod.obj \
-  /home/crtie/crtie/Manual2Skill2/chair_real/rod.usd \
-  --collision-approximation sdf \
-  --mass 0.01
-
-./isaaclab.sh -p scripts/tools/convert_urdf.py \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame_back_rod.urdf \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame_back_rod.usd \
-  --collision-approximation sdf
-
-./isaaclab.sh -p scripts/tools/convert_urdf.py \
-  /home/crtie/crtie/Manual2Skill2/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_back_rod.urdf \
-  /home/crtie/crtie/Manual2Skill2/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_back_rod.usd \
-  --collision-approximation sdf
-
-./isaaclab.sh -p scripts/tools/convert_urdf.py \
-  /home/crtie/crtie/Manual2Skill2/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_back.urdf \
-  /home/crtie/crtie/Manual2Skill2/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_back.usd \
-  --collision-approximation sdf
-
-./isaaclab.sh -p scripts/tools/convert_urdf.py \
-  /home/crtie/crtie/Manual2Skill2/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_back_rod_rod.urdf \
-  /home/crtie/crtie/Manual2Skill2/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_back_rod_rod.usd \
-  --collision-approximation sdf
-
-./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame_mirror.obj \
-  /home/crtie/crtie/Manual2Skill2/chair_real/frame_mirror.usd \
-  --collision-approximation sdf \
-  --mass 0.01
-
-./isaaclab.sh -p scripts/tools/convert_urdf.py \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_wo_seat.urdf \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/frame_wo_seat.usd \
-  --collision-approximation sdf
 
   ./isaaclab.sh -p scripts/tools/convert_urdf.py \
   /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/mesh/chair_all.urdf \
@@ -161,26 +74,8 @@ TODO:
 
 
 ./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/top_re.obj \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/top_re.usd \
-  --collision-approximation sdf \
-  --mass 0.01
-
-./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/frame.obj \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/frame3.usd \
-  --collision-approximation sdf \
-  --mass 0.01
-
-./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/vasskar_all.obj \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/vasskar_all.usd \
-  --collision-approximation sdf \
-  --mass 0.01
-
-./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/screw.obj \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/vasskar/screw.usd \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/plane/wheel.obj \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/plane/wheel.usd \
   --collision-approximation sdf \
   --mass 0.01
 

@@ -14,6 +14,7 @@ from isaaclab.utils import configclass
 
 from .chair_tasks_cfg import ASSET_DIR, FactoryTask, ChairAssembly1, ChairAssembly2, ChairAssembly3, ChairAssembly4, ChairAssembly5, ChairAssembly6
 from .vasskar_tasks_cfg import VASSKAR_ASSET_DIR, VasskarAssembly1, VasskarAssembly2
+from .plane_tasks_cfg import PlaneAssembly1#, PlaneAssembly2
 
 OBS_DIM_CFG = {
     "fingertip_pos": 3,
@@ -237,4 +238,10 @@ class FrankaVasskar1Cfg(FactoryEnvCfg):
 class FrankaVasskar2Cfg(FactoryEnvCfg):
     task_name = "vasskar_assembly2"
     task = VasskarAssembly2()
+    episode_length_s = 30.0
+
+@configclass
+class FrankaPlane1Cfg(FactoryEnvCfg):
+    task_name = "plane_assembly1"
+    task = PlaneAssembly1()
     episode_length_s = 30.0

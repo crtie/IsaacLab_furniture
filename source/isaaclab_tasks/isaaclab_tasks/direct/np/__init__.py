@@ -14,8 +14,10 @@ from .chair5_env import FrankaChair5Env
 from .chair6_env import FrankaChair6Env
 from .vasskar1_env import FrankaVasskar1Env
 from .vasskar2_env import FrankaVasskar2Env
+from .plane1_env import FrankaPlane1Env
 from .np_env_cfg import FrankaChair1Cfg, FrankaChair2Cfg, FrankaChair3Cfg, FrankaChair4Cfg, FrankaChair5Cfg, FrankaChair6Cfg
 from .np_env_cfg import FrankaVasskar1Cfg, FrankaVasskar2Cfg
+from .np_env_cfg import FrankaPlane1Cfg
 
 ##
 # Register Gym environments.
@@ -97,6 +99,16 @@ gym.register(
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": FrankaVasskar2Cfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+    },
+)
+
+gym.register(
+    id="Isaac-Franka-Plane1-Direct-v0",
+    entry_point="isaaclab_tasks.direct.np:FrankaPlane1Env",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": FrankaPlane1Cfg,
         "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
     },
 )
