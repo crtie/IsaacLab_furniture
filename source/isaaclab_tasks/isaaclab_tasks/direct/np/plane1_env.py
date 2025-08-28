@@ -167,25 +167,31 @@ class FrankaPlane1Env(DirectRLEnv):
             "/World/envs/env_.*/Table", cfg, translation=(0., 0.0, 0.0), orientation=(1, 0.0, 0.0, 0.0))
         print(f"robot cfg: {self.cfg.robot}")
         self._robot = Articulation(self.cfg.robot)
+        if self.cfg_task.task_idx in [3, 4]:
+            self.cfg_task.fixed_asset.init_state.pos += np.array([0.0, 0.0, 0.025])
         self._fixed_asset = Articulation(self.cfg_task.fixed_asset)
 
         if self.cfg_task.task_idx == 1:
-            self._top1 = RigidObject(self.cfg_task.top1)
-            self._held_asset = self._top1
+            self._wheel1 = RigidObject(self.cfg_task.wheel)
+            self._held_asset = self._wheel1
             self._connection_cfg = self.cfg_task.connection_cfg1
 
         if self.cfg_task.task_idx ==2:
-            self._top1 = RigidObject(self.cfg_task.top1)
-            self._top2 = RigidObject(self.cfg_task.top2)
-            self._held_asset = self._top2
+            self._wheel1 = RigidObject(self.cfg_task.wheel)
+            self._wheel_dowel1 = RigidObject(self.cfg_task.wheel_dowel)
+            self._held_asset = self._wheel_dowel1
             self._connection_cfg = self.cfg_task.connection_cfg2
 
         if self.cfg_task.task_idx ==3:
-            self._top1 = RigidObject(self.cfg_task.top1)
-            self._top2 = RigidObject(self.cfg_task.top2)
-            self._frame2 = RigidObject(self.cfg_task.frame2)
-            self._held_asset = self._frame2
+            self._wheel2 = RigidObject(self.cfg_task.wheel)
+            self._held_asset = self._wheel2
             self._connection_cfg = self.cfg_task.connection_cfg3
+
+        if self.cfg_task.task_idx ==4:
+            self._wheel1 = RigidObject(self.cfg_task.wheel)
+            self._wheel_dowel1 = RigidObject(self.cfg_task.wheel_dowel)
+            self._held_asset = self._wheel_dowel1
+            self._connection_cfg = self.cfg_task.connection_cfg1
         
 
         self.scene.clone_environments(copy_from_source=False)
@@ -351,18 +357,13 @@ class FrankaPlane1Env(DirectRLEnv):
         import omni.usd
         stage = omni.usd.get_context().get_stage()
         if connection_idx == 1:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/TopFrame1")
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Wheel1")
             joint_path = "/World/envs/env_0/FixedJoint1"
             connection_cfg = self.cfg_task.connection_cfg1_fix
-        elif connection_idx == 2:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/TopFrame2")
-            joint_path = "/World/envs/env_0/FixedJoint2"
-            connection_cfg = self.cfg_task.connection_cfg2_fix
-
         elif connection_idx == 3:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/SideFrame")
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Wheel1")
             joint_path = "/World/envs/env_0/FixedJoint3"
-            connection_cfg = self.cfg_task.connection_cfg3
+            connection_cfg = self.cfg_task.connection_cfg3_fix
 
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
         
@@ -406,8 +407,8 @@ class FrankaPlane1Env(DirectRLEnv):
         print("t_normal:", t_normal)
         # print("joint names of frame:",self._fixed_asset.joint_names)
         if not self.joint_created and R_dist < 0.1 and t_tangent < 0.005 and t_normal < 0.008:
-            if self.cfg_task.task_idx == 3:
-                self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
+            # if self.cfg_task.task_idx == 2:
+            #     self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
             # self._create_screw_joint(connection_idx=self.cfg_task.task_idx)
             self.joint_created = True
             rel_mat = self._get_real_mat()
@@ -747,21 +748,21 @@ class FrankaPlane1Env(DirectRLEnv):
 
     def get_handheld_asset_relative_pose(self):
         """Get default relative pose between help asset and fingertip."""
-        if self.cfg_task.name == "plane_assembly" and self.cfg_task.task_idx in [1, 2]:
+        if self.cfg_task.name == "plane_assembly" and self.cfg_task.task_idx in [1, 3]:
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
             held_asset_relative_pos[:, 2] = self.cfg_task.held_asset_cfg.height
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
             held_asset_relative_pos[:, 2] += 0.22
-            held_asset_relative_pos[:, 1] += 0.11
-            held_asset_relative_pos[:, 0] += 0.15
+            held_asset_relative_pos[:, 1] += 0.097
+            held_asset_relative_pos[:, 0] += 0.14
 
-        elif self.cfg_task.name == "plane_assembly" and self.cfg_task.task_idx in [3]:
+        elif self.cfg_task.name == "plane_assembly" and self.cfg_task.task_idx in [2, 4]:
             held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
-            held_asset_relative_pos[:, 2] = self.cfg_task.fixed_asset_cfg.height
+            held_asset_relative_pos[:, 2] = self.cfg_task.held_asset_cfg.height
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
-            held_asset_relative_pos[:, 2] += 0.0
-            held_asset_relative_pos[:, 1] -= 0.22
-            held_asset_relative_pos[:, 0] -= 0.159
+            held_asset_relative_pos[:, 2] += 0.135
+            held_asset_relative_pos[:, 1] += 0.055
+            held_asset_relative_pos[:, 0] += 0.07
         else:
             raise NotImplementedError("Task not implemented")
 
@@ -835,7 +836,22 @@ class FrankaPlane1Env(DirectRLEnv):
         self.step_sim_no_action()
 
 
-        if self.cfg_task.task_idx ==1:
+        if self.cfg_task.task_idx in [1, 3]:
+            fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
+
+            _, fixed_tip_pos = torch_utils.tf_combine(
+                self.fixed_quat, self.fixed_pos, self.identity_quat, fixed_tip_pos_local
+            )
+            self.fixed_pos_obs_frame[:] = fixed_tip_pos
+            rela_trans = fixed_tip_pos.clone()
+            rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
+            rela_trans[:, 2] -= 0.03
+            rela_trans[:, 1] += 0.1
+            rela_trans[:, 0] -= 0.12
+
+        if self.cfg_task.task_idx in [2, 4]:
             fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
             fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
             fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
@@ -847,39 +863,9 @@ class FrankaPlane1Env(DirectRLEnv):
             rela_trans = fixed_tip_pos.clone()
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
             rela_trans[:, 2] += 0.0
-            rela_trans[:, 1] += 0.10
+            rela_trans[:, 1] += 0.18
             rela_trans[:, 0] -= 0.12
 
-        if self.cfg_task.task_idx ==2:
-            fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
-            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
-            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
-
-            _, fixed_tip_pos = torch_utils.tf_combine(
-                self.fixed_quat, self.fixed_pos, self.identity_quat, fixed_tip_pos_local
-            )
-            self.fixed_pos_obs_frame[:] = fixed_tip_pos
-            rela_trans = fixed_tip_pos.clone()
-            rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
-            rela_trans[:, 2] += 0.11
-            rela_trans[:, 1] += 0.21
-            rela_trans[:, 0] -= 0.12
-
-
-        if self.cfg_task.task_idx ==3:
-            fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
-            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
-            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
-
-            _, fixed_tip_pos = torch_utils.tf_combine(
-                self.fixed_quat, self.fixed_pos, self.identity_quat, fixed_tip_pos_local
-            )
-            self.fixed_pos_obs_frame[:] = fixed_tip_pos
-            rela_trans = fixed_tip_pos.clone()
-            rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
-            rela_trans[:, 2] += 0.16
-            rela_trans[:, 1] += 0.22
-            rela_trans[:, 0] -= 0.16
 
 
         # (2) Move gripper to randomizes location above fixed asset. Keep trying until IK succeeds.
@@ -941,23 +927,8 @@ class FrankaPlane1Env(DirectRLEnv):
 
         if self.cfg_task.task_idx == 2:
             self._create_fixed_joint(connection_idx=1)
-
-        elif self.cfg_task.task_idx == 3:
-            # abs_t = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
-            # abs_R = torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.device)
-            # abs_t[:] = torch.tensor(([-0.1408,-0.10, 0.755]))
-            # abs_R[:] = torch.tensor(([0.5, -0.5, -0.5, -0.5]))
-            # top1_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
-            # self._top1.write_root_pose_to_sim(top1_state)
-            # self._top1.reset()
-            # abs_t[:] = torch.tensor(([-0.1408,0.08, 0.755]))
-            # abs_R[:] = torch.tensor(([0.5, -0.5, -0.5, -0.5]))
-            # top2_state = torch.concat((abs_t, abs_R),dim=1)  # [N, 7]
-            # self._top2.write_root_pose_to_sim(top2_state)
-            # self._top2.reset()
-            self._create_fixed_joint(connection_idx=1)
-            self._create_fixed_joint(connection_idx=2)
-
+        elif self.cfg_task.task_idx == 4:
+            self._create_fixed_joint(connection_idx=3)
 
 
         # (3) Randomize asset-in-gripper location.
@@ -993,7 +964,7 @@ class FrankaPlane1Env(DirectRLEnv):
             t2=self.held_asset_pos_noise,
         )
 
-        if self.cfg_task.task_idx in [1, 2]:
+        if self.cfg_task.task_idx in [1, 2, 3, 4]:
             rot_euler = torch.tensor([1.5707, -1.5707, 0.0], device=self.device).repeat(
             self.num_envs, 1
             )
@@ -1001,13 +972,6 @@ class FrankaPlane1Env(DirectRLEnv):
                 roll=rot_euler[:, 0], pitch=rot_euler[:, 1], yaw=rot_euler[:, 2]
             )
 
-        if self.cfg_task.task_idx in [3]:
-            rot_euler = torch.tensor([0, 0.0, 0.0], device=self.device).repeat(
-            self.num_envs, 1
-            )
-            translated_held_asset_quat = torch_utils.quat_from_euler_xyz(
-                roll=rot_euler[:, 0], pitch=rot_euler[:, 1], yaw=rot_euler[:, 2]
-            )
 
         held_state = self._held_asset.data.default_root_state.clone()
         held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins

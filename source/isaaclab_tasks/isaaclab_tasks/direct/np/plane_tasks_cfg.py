@@ -109,8 +109,24 @@ class WheelAxis(FixedAssetCfg):
 @configclass
 class Wheel(FixedAssetCfg):
     usd_path = f"{PLANE_ASSET_DIR}/wheel.usd"
+    diameter = 0.06
+    height = 0.0
+    mass = 0.01
+    base_height = 0.0
+
+@configclass
+class WheelDowel(FixedAssetCfg):
+    usd_path = f"{PLANE_ASSET_DIR}/wheel_dowel.usd"
+    diameter = 0.02
+    height = 0.1
+    mass = 0.01
+    base_height = 0.0
+
+@configclass
+class WheelAxisHalf(FixedAssetCfg):
+    usd_path = f"{PLANE_ASSET_DIR}/wheel_axis_half1.usd"
     diameter = 0.04
-    height = 0.05
+    height = -0.005
     mass = 0.01
     base_height = 0.0
 
@@ -125,12 +141,23 @@ class PlaneAssembly1(FactoryTask):
     #! crtie: task 2 is "the second top frame",
     #! crtie: task 3 is "the side frame".,
 
-    task_idx = 1
+    task_idx = 4
 
 
     name = "plane_assembly"
-    fixed_asset_cfg = WheelAxis()
-    held_asset_cfg = Wheel()
+
+    wheel_axis_cfg = WheelAxis()
+    wheel_axis_half_cfg = WheelAxisHalf()
+    wheel_cfg = Wheel()
+    wheel_dowel_cfg = WheelDowel()
+    if task_idx in [1, 3]:
+        held_asset_cfg = Wheel()
+    elif task_idx in [2, 4]:
+        held_asset_cfg = WheelDowel()
+    if task_idx in [1, 2]:
+        fixed_asset_cfg = WheelAxis()
+    elif task_idx in [3, 4]:
+        fixed_asset_cfg = WheelAxisHalf()
     asset_size = 8.0
     duration_s = 10.0
 
@@ -191,18 +218,17 @@ class PlaneAssembly1(FactoryTask):
 
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.15, -0.15, 0.65), rot=(0.707, 0.0, -0.707, 0.0), joint_pos={}, joint_vel={}
-            # pos=(-0.16, -0.14, 3.20), rot=(1.0, 0.0, 0.0, 0.0), joint_pos={}, joint_vel={}
         ),
         actuators={},
     )
 
 
-    top1: RigidObjectCfg = RigidObjectCfg(
-        prim_path="/World/envs/env_.*/TopFrame1",
+    wheel: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Wheel1",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=held_asset_cfg.usd_path,
+            usd_path=wheel_cfg.usd_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                disable_gravity=True,
+                disable_gravity=False,
                 max_depenetration_velocity=5.0,
                 linear_damping=0.0,
                 angular_damping=0.0,
@@ -214,22 +240,22 @@ class PlaneAssembly1(FactoryTask):
                 max_contact_impulse=1e32,
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
-            scale = np.array([2.1, 2.1, 2.1]), 
+            scale = np.array([1.8, 1.8, 1.8]), 
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
-                                                             collision_enabled=(task_idx in [1,3])),
+                                                             collision_enabled= True),
                                                             # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
 
-    top2: RigidObjectCfg = RigidObjectCfg(
-        prim_path="/World/envs/env_.*/TopFrame2",
+    wheel_dowel: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/WheelDowel1",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=held_asset_cfg.usd_path,
+            usd_path=wheel_dowel_cfg.usd_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,
                 max_depenetration_velocity=5.0,
@@ -243,12 +269,12 @@ class PlaneAssembly1(FactoryTask):
                 max_contact_impulse=1e32,
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
-            scale = np.array([0.7, 1.0, 1.0]), 
+            scale = np.array([1.2, 1.0, 1.0]), 
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
-                                                             collision_enabled=(task_idx in [2,3])),
+                                                             collision_enabled=True),
                                                             # collision_enabled = False),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -259,10 +285,10 @@ class PlaneAssembly1(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/TopFrame1",
         pose_to_base = np.array(
-        [[ 0.9999803,   0.0023063,  -0.00584153, -0.00117   ],
-        [ 0.0058575,  -0.00698005,  0.99995846,  0.26125655],
-        [ 0.00226543, -0.999973,   -0.00699342, -0.04449517],
-        [ 0.,          0.,          0.,          1.        ]]),
+        [[1.0, 0.0, 0.0, 0.0369899 ],
+        [ 0.0, 0.0, -1.0, 0.24668184],
+        [ 0.0, 1.0, 0.0,-0.02043285],
+        [ 0.,  0.,  0.,  1. ]]),
         axis_r = np.array([1.0, 0.0, 0.0]),
         axis_t = np.array([1.0, 0.0, 0.0]),
     )
@@ -272,10 +298,10 @@ class PlaneAssembly1(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/TopFrame1",
         pose_to_base = np.array(
-            [[0.0, -1.0, 0.0, 0.3],
-            [0.0, 0.0, -1.0, 0.03],
-            [1.0, 0.0, 0.0, -0.416],
-            [0.0, 0.0, 0.0, 1.0]]),
+        [[1.0, 0.0, 0.0, 0.018], #z
+        [ 0.0, 0.0, -1.0, 0.122],
+        [ 0.0, 1.0, 0.0,  -0.012],#x
+        [ 0.,  0.,  0.,  1. ]]),
         # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
@@ -285,12 +311,12 @@ class PlaneAssembly1(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/TopFrame2",
         pose_to_base = np.array(
-            [[0.0, 0.0, -1.0, 0.0],
-            [1.0, 0.0, 0.0, 0.21],
-            [0.0, -1.0, 0.0, -0.0165],
+            [[1.0, 0.0, 0.0, 0.053],
+            [0.0, 0.0, 1.0, 0.2],
+            [0.0, -1.0, 0.0, 0.035],
             [0.0, 0.0, 0.0, 1.0]]),
-        # axis_r = np.array([0.0, 0.0, 1.0]),
-        axis_t = np.array([0.0, 0.0, 1.0]),
+        axis_r = np.array([1.0, 0.0, 0.0]),
+        axis_t = np.array([1.0, 0.0, 0.0]),
     )
 
     connection_cfg2_fix: ConnectionCfg = ConnectionCfg(
@@ -306,15 +332,15 @@ class PlaneAssembly1(FactoryTask):
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
-    connection_cfg3: ConnectionCfg = ConnectionCfg(
+    connection_cfg3_fix: ConnectionCfg = ConnectionCfg(
         connection_type = "plug_connection",
         base_path = "/World/envs/env_.*/FixedAsset",
-        connector_path = "/World/envs/env_.*/SideFrame",
+        connector_path = "/World/envs/env_.*/TopFrame1",
         pose_to_base = np.array(
-            [[-1.0, 0.0, 0.0, 0.3],
-            [0.0, 1.0, 0.0, 0.001],
-            [0.0, 0.0, -1.0, -0.432],
-            [0.0, 0.0, 0.0, 1.0]]),
+        [[1.0, 0.0, 0.0, 0.018], #z
+        [ 0.0, 0.0, -1.0, 0.122],
+        [ 0.0, 1.0, 0.0,  -0.012],#x
+        [ 0.,  0.,  0.,  1. ]]),
         # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )

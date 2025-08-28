@@ -74,8 +74,8 @@ $ python scripts/reinforcement_learning/rl_games/play.py --task Isaac-Factory-Nu
 
 
 ./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/plane/wheel.obj \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/plane/wheel.usd \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/plane/wheel_axis_half.obj \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/plane/wheel_axis_half.usd \
   --collision-approximation sdf \
   --mass 0.01
 
