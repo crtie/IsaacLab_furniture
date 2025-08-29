@@ -1,7 +1,7 @@
 $conda activate env_isaaclab
 
 
-$ python scripts/environments/zero_agent.py --task Isaac-Franka-Plane1-Direct-v0 --num_envs 1 --disable_fabric
+$ python scripts/environments/zero_agent.py --task Isaac-Franka-Plane2-Direct-v0 --num_envs 1 --disable_fabric
 
 $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
   /home/crtie/crtie/Manual2Skill2/chair_real/frame.obj \
@@ -59,7 +59,7 @@ $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
 
 
 
-$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Franka-Plane1-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
+$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Franka-Plane2-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
 
 
 $ python scripts/reinforcement_learning/rl_games/train.py --task Isaac-Factory-NutThread-Direct-v0 --num_envs 128 --headless
@@ -74,8 +74,8 @@ $ python scripts/reinforcement_learning/rl_games/play.py --task Isaac-Factory-Nu
 
 
 ./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/plane/wheel_axis_half.obj \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/plane/wheel_axis_half.usd \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/plane/propeller.obj \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/plane/propeller.usd \
   --collision-approximation sdf \
   --mass 0.01
 
