@@ -46,6 +46,7 @@ class ConnectionCfg:
     connector_path: str = ""
     pose_to_base: np.ndarray = np.eye(4)  # 4x4 transformation matrix from connector to base.
     pose_to_base1: np.ndarray = np.eye(4)  # 4x4 transformation matrix from connector to base, used for the first connection.
+    pose_to_base_euler: np.ndarray = np.array([0.0, 0.0, 0.0])  # Euler angles (in radians) representing rotation from connector to base.
     axis_t: np.ndarray = np.array([0.0, 0.0, 1.0])  # Axis of the connection, describe the connection direction.
     axis_r: np.ndarray = np.array([0.0, 0.0, 1.0])  # Axis of the connection, describe the rotation symmetry of the connection, i.e. the axis around which the connector can rotate relative to the base.
 
@@ -159,9 +160,18 @@ class Body(FixedAssetCfg):
 class Propeller(FixedAssetCfg):
     usd_path = f"{PLANE_ASSET_DIR}/propeller.usd"
     diameter = 0.06
-    height = 0.12
+    height = 0.01
     mass = 0.01
     base_height = 0.0
+
+@configclass
+class Holder(FixedAssetCfg):
+    usd_path = f"{PLANE_ASSET_DIR}/holder.usd"
+    diameter = 0.06
+    height = 0.01
+    mass = 0.01
+    base_height = 0.0
+
 
 @configclass
 class PlaneAssembly1(FactoryTask):
@@ -385,13 +395,14 @@ class PlaneAssembly2(FactoryTask):
     #! crtie: task 2 is "the second top frame",
     #! crtie: task 3 is "the side frame".,
 
-    task_idx = 2
+    task_idx = 4
 
 
     name = "plane_assembly"
     tailhalf_cfg = TailHalf2()
     body_cfg = Body()
     propeller_cfg = Propeller()
+    holder_cfg = Holder()
     if task_idx == 1:
         fixed_asset_cfg = TailHalf1()
         held_asset_cfg = TailHalf2()
@@ -401,6 +412,9 @@ class PlaneAssembly2(FactoryTask):
     elif task_idx == 3:
         fixed_asset_cfg = TailHalf1()
         held_asset_cfg = Propeller()
+    elif task_idx == 4:
+        fixed_asset_cfg = TailHalf1()
+        held_asset_cfg = Holder()
     asset_size = 8.0
     duration_s = 10.0
 
@@ -488,7 +502,7 @@ class PlaneAssembly2(FactoryTask):
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
-                                                             collision_enabled= True),
+                                                             collision_enabled= (task_idx in [1, 2, 3])),
                                                             # collision_enabled = False),
                                                             
         ),
@@ -517,7 +531,7 @@ class PlaneAssembly2(FactoryTask):
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
-                                                             collision_enabled= True),
+                                                             collision_enabled= (task_idx in [2, 3])),
                                                             # collision_enabled = False),
                                                             
         ),
@@ -546,8 +560,37 @@ class PlaneAssembly2(FactoryTask):
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
-                                                            #  collision_enabled= True),
-                                                            collision_enabled = False),
+                                                             collision_enabled= True),
+                                                            # collision_enabled = False),
+                                                            
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
+    )
+
+    holder: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Holder",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=holder_cfg.usd_path,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=True,
+                max_depenetration_velocity=5.0,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_linear_velocity=1000.0,
+                max_angular_velocity=3666.0,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=192,
+                solver_velocity_iteration_count=1, 
+                max_contact_impulse=1e32,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass = 0.01),
+            scale = np.array([1.2, 1., 1.]), 
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                articulation_enabled=False,  # Set to False for RigidObject
+            ),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
+                                                             collision_enabled= True),
+                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -573,22 +616,36 @@ class PlaneAssembly2(FactoryTask):
         pose_to_base = np.array(
             [[0.0, 0.0, 1.0, 0.],
             [0.0, 1.0, 0.0, -0.006],
-            [-1.0, 0.0, 0.0, -0.14],
+            [-1.0, 0.0, 0.0, -0.13],
             [0.0, 0.0, 0.0, 1.0]]),
         # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
     connection_cfg3: ConnectionCfg = ConnectionCfg(
-        connection_type = "plug_connection",
+        #! crtie: something fking wrong with transformation matrix here, euler angle works fine
+        connection_type = "euler",
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/TopFrame2",
         pose_to_base = np.array(
-            [[0.0, 0.0, -1.0, 0.],
-            [-1.0, 0.0, 0.0, -0.006],
-            [0.0, 1.0, 0.0, -0.14],
+            [[0.0, 0.0, 1.0, 0.004], #y
+            [1.0, 0.0, 0.0, -0.006],
+            [0.0, 1.0, 0.0, -0.27],
             [0.0, 0.0, 0.0, 1.0]]),
+        pose_to_base_euler = np.array([1.5708, 0.0, 1.5708]),
         axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
+    connection_cfg4: ConnectionCfg = ConnectionCfg(
+        connection_type = "plug_connection",
+        base_path = "/World/envs/env_.*/FixedAsset",
+        connector_path = "/World/envs/env_.*/TopFrame2",
+        pose_to_base = np.array(
+            [[1.0, 0.0, 0.0, 0.007],
+            [0.0, 0.0, -1.0, -0.008],
+            [0.0, 1.0, 0.0, -0.0275],
+            [0.0, 0.0, 0.0, 1.0]]),
+        axis_r = np.array([0.0, 0.0, 1.0]),
+        axis_t = np.array([0.0, 0.0, 1.0]),
+    )

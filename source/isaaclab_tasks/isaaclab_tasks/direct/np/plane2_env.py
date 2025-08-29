@@ -190,9 +190,11 @@ class FrankaPlane2Env(DirectRLEnv):
             self._connection_cfg = self.cfg_task.connection_cfg3
 
         if self.cfg_task.task_idx ==4:
-            self._tailhalf = RigidObject(self.cfg_task.wheel)
-            self._body = RigidObject(self.cfg_task.wheel_dowel)
-            self._held_asset = self._body
+            self._tailhalf = RigidObject(self.cfg_task.tailhalf)
+            self._body = RigidObject(self.cfg_task.body)
+            self._propeller = RigidObject(self.cfg_task.propeller)
+            self._holder = RigidObject(self.cfg_task.holder)
+            self._held_asset = self._holder
             self._connection_cfg = self.cfg_task.connection_cfg1
         
 
@@ -367,9 +369,9 @@ class FrankaPlane2Env(DirectRLEnv):
             joint_path = "/World/envs/env_0/FixedJoint2"
             connection_cfg = self.cfg_task.connection_cfg2
         elif connection_idx == 3:
-            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Wheel1")
+            held_prim = stage.GetPrimAtPath("/World/envs/env_0/Propeller")
             joint_path = "/World/envs/env_0/FixedJoint3"
-            connection_cfg = self.cfg_task.connection_cfg3_fix
+            connection_cfg = self.cfg_task.connection_cfg3
 
         fixed_prim = stage.GetPrimAtPath("/World/envs/env_0/FixedAsset")
         
@@ -377,14 +379,19 @@ class FrankaPlane2Env(DirectRLEnv):
         to_path = held_prim.GetPath()
         from_path = fixed_prim.GetPath()
         # rel_mat1 = self._get_real_mat()
-        rel_mat = connection_cfg.pose_to_base
-        # rel_mat = np.eye(4, dtype=np.float32)
-        # rel_mat[:3, :3] = rel_mat1[:3, :3]
-        # rel_mat[:3, 3] = rel_mat2[:3, 3]
-        pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
-        rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
-        rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
-
+        if not connection_cfg.connection_type == "euler":
+            rel_mat = connection_cfg.pose_to_base
+            pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
+            rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
+            rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
+        else:
+            rel_mat = connection_cfg.pose_to_base
+            pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
+            rot_euler = torch.tensor(connection_cfg.pose_to_base_euler, device=self.device).unsqueeze(0)
+            rot1q = torch_utils.quat_from_euler_xyz(
+                roll=rot_euler[:, 0], pitch=rot_euler[:, 1], yaw=rot_euler[:, 2]
+            ).squeeze()
+            rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))  
         joint = UsdPhysics.FixedJoint.Define(stage, joint_path)
         joint.CreateBody0Rel().SetTargets([Sdf.Path(from_path)])
         joint.CreateBody1Rel().SetTargets([Sdf.Path(to_path)])
@@ -779,7 +786,15 @@ class FrankaPlane2Env(DirectRLEnv):
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
             held_asset_relative_pos[:, 2] += 0.
             held_asset_relative_pos[:, 1] += 0.0
-            held_asset_relative_pos[:, 0] += 0.02
+            held_asset_relative_pos[:, 0] += 0.0
+
+        elif self.cfg_task.name == "plane_assembly" and self.cfg_task.task_idx in [4]:
+            held_asset_relative_pos = torch.zeros_like(self.held_base_pos_local)
+            held_asset_relative_pos[:, 2] = self.cfg_task.held_asset_cfg.height
+            held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
+            held_asset_relative_pos[:, 2] += 0.
+            held_asset_relative_pos[:, 1] += 0.0
+            held_asset_relative_pos[:, 0] -= 0.01
         else:
             raise NotImplementedError("Task not implemented")
 
@@ -898,6 +913,21 @@ class FrankaPlane2Env(DirectRLEnv):
             rela_trans[:, 1] += 0.
             rela_trans[:, 0] -= 0.
 
+        if self.cfg_task.task_idx in [4]:
+            fixed_tip_pos_local = torch.zeros_like(self.fixed_pos)
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.height
+            fixed_tip_pos_local[:, 2] += self.cfg_task.fixed_asset_cfg.base_height
+            _, fixed_tip_pos = torch_utils.tf_combine(
+                self.fixed_quat, self.fixed_pos, self.identity_quat, fixed_tip_pos_local
+            )
+            self.fixed_pos_obs_frame[:] = fixed_tip_pos
+            rela_trans = fixed_tip_pos.clone()
+            rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
+            rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
+            rela_trans[:, 2] -= 0.25
+            rela_trans[:, 1] += 0.
+            rela_trans[:, 0] -= 0.
+
 
 
         # (2) Move gripper to randomizes location above fixed asset. Keep trying until IK succeeds.
@@ -963,6 +993,8 @@ class FrankaPlane2Env(DirectRLEnv):
             self._create_fixed_joint(connection_idx=1)
             self._create_fixed_joint(connection_idx=2)
         elif self.cfg_task.task_idx == 4:
+            self._create_fixed_joint(connection_idx=1)
+            self._create_fixed_joint(connection_idx=2)
             self._create_fixed_joint(connection_idx=3)
 
 
@@ -1007,6 +1039,21 @@ class FrankaPlane2Env(DirectRLEnv):
                 roll=rot_euler[:, 0], pitch=rot_euler[:, 1], yaw=rot_euler[:, 2]
             )
 
+        if self.cfg_task.task_idx == 3:
+            rot_euler = torch.tensor([1.5707, 0, 0], device=self.device).repeat(
+            self.num_envs, 1
+            )
+            translated_held_asset_quat = torch_utils.quat_from_euler_xyz(
+                roll=rot_euler[:, 0], pitch=rot_euler[:, 1], yaw=rot_euler[:, 2]
+            )
+
+        if self.cfg_task.task_idx == 4:
+            rot_euler = torch.tensor([0, 1.5707, 0], device=self.device).repeat(
+            self.num_envs, 1
+            )
+            translated_held_asset_quat = torch_utils.quat_from_euler_xyz(
+                roll=rot_euler[:, 0], pitch=rot_euler[:, 1], yaw=rot_euler[:, 2]
+            )
 
         held_state = self._held_asset.data.default_root_state.clone()
         held_state[:, 0:3] = translated_held_asset_pos + self.scene.env_origins
