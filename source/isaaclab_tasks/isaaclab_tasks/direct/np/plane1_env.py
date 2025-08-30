@@ -185,7 +185,7 @@ class FrankaPlane1Env(DirectRLEnv):
         if self.cfg_task.task_idx ==3:
             self._wheel2 = RigidObject(self.cfg_task.wheel)
             self._held_asset = self._wheel2
-            self._connection_cfg = self.cfg_task.connection_cfg3
+            self._connection_cfg = self.cfg_task.connection_cfg3_fix
 
         if self.cfg_task.task_idx ==4:
             self._wheel1 = RigidObject(self.cfg_task.wheel)
@@ -435,7 +435,7 @@ class FrankaPlane1Env(DirectRLEnv):
 
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
-        self._visualize_markers()
+        # self._visualize_markers()
         self._check_attach_condition()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
@@ -847,7 +847,7 @@ class FrankaPlane1Env(DirectRLEnv):
             self.fixed_pos_obs_frame[:] = fixed_tip_pos
             rela_trans = fixed_tip_pos.clone()
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
-            rela_trans[:, 2] -= 0.03
+            rela_trans[:, 2] -= 0.0
             rela_trans[:, 1] += 0.1
             rela_trans[:, 0] -= 0.12
 
