@@ -19,11 +19,16 @@ from .plane2_env import FrankaPlane2Env
 from .plane3_env import FrankaPlane3Env
 from .plane4_env import FrankaPlane4Env
 from .lego1_env import FrankaLego1Env
+from .lego2_env import FrankaLego2Env
+from .lego3_env import FrankaLego3Env
+from .lego4_env import FrankaLego4Env
+from .lego5_env import FrankaLego5Env
+from .lego6_env import FrankaLego6Env
+from .lego7_env import FrankaLego7Env
 from .np_env_cfg import FrankaChair1Cfg, FrankaChair2Cfg, FrankaChair3Cfg, FrankaChair4Cfg, FrankaChair5Cfg, FrankaChair6Cfg
 from .np_env_cfg import FrankaVasskar1Cfg, FrankaVasskar2Cfg
 from .np_env_cfg import FrankaPlane1Cfg, FrankaPlane2Cfg, FrankaPlane3Cfg, FrankaPlane4Cfg
-from .np_env_cfg import FrankaLego1Cfg
-
+from .np_env_cfg import FrankaLego1Cfg, FrankaLego2Cfg, FrankaLego3Cfg, FrankaLego4Cfg, FrankaLego5Cfg, FrankaLego6Cfg, FrankaLego7Cfg
 
 ##
 # Register Gym environments.
@@ -155,6 +160,66 @@ gym.register(
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": FrankaLego1Cfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+    },
+)
+
+gym.register(
+    id="Isaac-Franka-Lego2-Direct-v0",
+    entry_point="isaaclab_tasks.direct.np:FrankaLego2Env",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": FrankaLego2Cfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+    },
+)
+
+gym.register(
+    id="Isaac-Franka-Lego3-Direct-v0",
+    entry_point="isaaclab_tasks.direct.np:FrankaLego3Env",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": FrankaLego3Cfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+    },
+)
+
+gym.register(
+    id="Isaac-Franka-Lego4-Direct-v0",
+    entry_point="isaaclab_tasks.direct.np:FrankaLego4Env",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": FrankaLego4Cfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+    },
+)
+
+gym.register(
+    id="Isaac-Franka-Lego5-Direct-v0",
+    entry_point="isaaclab_tasks.direct.np:FrankaLego5Env",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": FrankaLego5Cfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+    },
+)
+
+gym.register(
+    id="Isaac-Franka-Lego6-Direct-v0",
+    entry_point="isaaclab_tasks.direct.np:FrankaLego6Env",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": FrankaLego6Cfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+    },
+)
+
+gym.register(
+    id="Isaac-Franka-Lego7-Direct-v0",
+    entry_point="isaaclab_tasks.direct.np:FrankaLego7Env",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": FrankaLego7Cfg,
         "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
     },
 )

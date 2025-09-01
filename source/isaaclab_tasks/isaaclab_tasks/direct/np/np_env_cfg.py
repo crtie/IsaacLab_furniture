@@ -15,7 +15,7 @@ from isaaclab.utils import configclass
 from .chair_tasks_cfg import ASSET_DIR, FactoryTask, ChairAssembly1, ChairAssembly2, ChairAssembly3, ChairAssembly4, ChairAssembly5, ChairAssembly6
 from .vasskar_tasks_cfg import VASSKAR_ASSET_DIR, VasskarAssembly1, VasskarAssembly2
 from .plane_tasks_cfg import PlaneAssembly1, PlaneAssembly2, PlaneAssembly3, PlaneAssembly4
-from .lego_tasks_cfg import LegoAssembly1
+from .lego_tasks_cfg import LegoAssembly1, LegoAssembly2, LegoAssembly3, LegoAssembly4, LegoAssembly5, LegoAssembly6, LegoAssembly7
 
 OBS_DIM_CFG = {
     "fingertip_pos": 3,
@@ -270,4 +270,40 @@ class FrankaPlane4Cfg(FactoryEnvCfg):
 class FrankaLego1Cfg(FactoryEnvCfg):
     task_name = "lego_assembly1"
     task = LegoAssembly1()
+    episode_length_s = 30.0
+
+@configclass
+class FrankaLego2Cfg(FactoryEnvCfg):
+    task_name = "lego_assembly2"
+    task = LegoAssembly2()
+    episode_length_s = 30.0
+
+@configclass
+class FrankaLego3Cfg(FactoryEnvCfg):
+    task_name = "lego_assembly3"
+    task = LegoAssembly3()
+    episode_length_s = 30.0
+
+@configclass
+class FrankaLego4Cfg(FactoryEnvCfg):
+    task_name = "lego_assembly4"
+    task = LegoAssembly4()
+    episode_length_s = 30.0
+
+@configclass
+class FrankaLego5Cfg(FactoryEnvCfg):
+    task_name = "lego_assembly5"
+    task = LegoAssembly5()
+    episode_length_s = 30.0
+
+@configclass
+class FrankaLego6Cfg(FactoryEnvCfg):
+    task_name = "lego_assembly6"
+    task = LegoAssembly6()
+    episode_length_s = 30.0
+
+@configclass
+class FrankaLego7Cfg(FactoryEnvCfg):
+    task_name = "lego_assembly7"
+    task = LegoAssembly7()
     episode_length_s = 30.0

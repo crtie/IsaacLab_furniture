@@ -59,7 +59,7 @@ $ ./isaaclab.sh -p scripts/tools/convert_mesh.py \
 
 
 
-$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Franka-Lego1-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
+$ python scripts/environments/teleoperation/teleop_se3_agent_custom.py --task Isaac-Franka-Lego7-Direct-v0 --num_envs 1 --teleop_device keyboard --sensitivity 10
 
 
 $ python scripts/reinforcement_learning/rl_games/train.py --task Isaac-Factory-NutThread-Direct-v0 --num_envs 128 --headless
@@ -74,8 +74,8 @@ $ python scripts/reinforcement_learning/rl_games/play.py --task Isaac-Factory-Nu
 
 
 ./isaaclab.sh -p scripts/tools/convert_mesh.py \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/lego/hand.obj \
-  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/lego/hand.usd \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/lego/head.obj \
+  /home/zhujinxuan/IsaacLab_furniture/source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/lego/head.usd \
   --collision-approximation sdf \
   --mass 0.01
 
