@@ -1,15 +1,15 @@
 # Furniture Assembly Environments
 
-Robotic furniture assembly environments built on Isaac Lab,  for autonomous part assembly using a Franka Panda robot.
+Robotic furniture assembly environments built on Isaac Lab, for autonomous part assembly using a Franka Panda robot.
 
 ## Environments
 
 | Environment | Task ID | Description |
 |---|---|---|
-| Chair1 | `Isaac-Franka-Chair1-Direct-v0` | Plug insertion into chair frame |
-| Chair2 | `Isaac-Franka-Chair2-Direct-v0` | Rod insertion into chair frame |
-| Chair4 | `Isaac-Franka-Chair4-Direct-v0` | Board insertion into chair frame |
-| Vasskar1 | `Isaac-Franka-Vasskar1-Direct-v0` | Shelf frame assembly |
+| Chair1 | `Isaac-Franka-Chair1-Direct-v0` | Plug insertion into chair frame (peg-in-hole with grid search algorithm) |
+| Chair2 | `Isaac-Franka-Chair2-Direct-v0` | Rod insertion into chair frame (grid scan + Z-threshold detection) |
+| Chair4 | `Isaac-Franka-Chair4-Direct-v0` | Board insertion into chair frame (grid scan + slope detection) |
+| Vasskar1 | `Isaac-Franka-Vasskar1-Direct-v0` | Shelf frame assembly (grid scan + XY-stuck detection + hard press) |
 
 ## Quick Start
 
