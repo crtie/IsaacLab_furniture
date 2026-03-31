@@ -2,7 +2,7 @@
 
 Robotic furniture assembly environments built on Isaac Lab,  for autonomous part assembly using a Franka Panda robot.
 
-## Environments
+## Example Environments
 
 | Environment | Task ID | Description |
 |---|---|---|
