@@ -69,3 +69,11 @@ tests/
 
 # Docker history
 .isaac-lab-docker-history
+
+# Development logs and data
+my/
+**/logs/*.txt
+
+# Backup files
+_backup*/
+*.backup

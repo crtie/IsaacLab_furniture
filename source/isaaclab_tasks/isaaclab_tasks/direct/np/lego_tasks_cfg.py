@@ -2,7 +2,7 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
-import os, sys
+import os
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.utils import configclass
@@ -239,7 +239,6 @@ class LegoAssembly1(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -313,7 +312,6 @@ class LegoAssembly1(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled = True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -365,7 +363,6 @@ class LegoAssembly2(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -439,7 +436,6 @@ class LegoAssembly2(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled = True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -491,7 +487,6 @@ class LegoAssembly3(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -565,7 +560,6 @@ class LegoAssembly3(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled = True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -616,7 +610,6 @@ class LegoAssembly4(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -690,7 +683,6 @@ class LegoAssembly4(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled = True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -740,7 +732,6 @@ class LegoAssembly5(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -814,7 +805,6 @@ class LegoAssembly5(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled = True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -864,7 +854,6 @@ class LegoAssembly6(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -938,7 +927,6 @@ class LegoAssembly6(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled = True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -987,7 +975,6 @@ class LegoAssembly7(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -1061,7 +1048,6 @@ class LegoAssembly7(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled = True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),

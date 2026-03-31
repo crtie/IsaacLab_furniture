@@ -2,7 +2,7 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
-import os, sys
+import os
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.utils import configclass
@@ -251,7 +251,6 @@ class PlaneAssembly1(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -325,7 +324,6 @@ class PlaneAssembly1(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled= True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -354,7 +352,6 @@ class PlaneAssembly1(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled=True),
-                                                            # collision_enabled = False),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -381,7 +378,6 @@ class PlaneAssembly1(FactoryTask):
         [ 0.0, 0.0, -1.0, 0.122],
         [ 0.0, 1.0, 0.0,  -0.012],#x
         [ 0.,  0.,  0.,  1. ]]),
-        # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
@@ -407,7 +403,6 @@ class PlaneAssembly1(FactoryTask):
             [0.0, 0.0, -1.0, 0.21],
             [1.0, 0.0, 0.0, -0.416],
             [0.0, 0.0, 0.0, 1.0]]),
-        # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
@@ -420,7 +415,6 @@ class PlaneAssembly1(FactoryTask):
         [ 0.0, 0.0, -1.0, 0.122],
         [ 0.0, 1.0, 0.0,  -0.012],#x
         [ 0.,  0.,  0.,  1. ]]),
-        # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
@@ -465,7 +459,6 @@ class PlaneAssembly2(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -539,7 +532,6 @@ class PlaneAssembly2(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled= (task_idx in [1, 2, 3])),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -568,7 +560,6 @@ class PlaneAssembly2(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled= (task_idx in [2, 3])),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -597,7 +588,6 @@ class PlaneAssembly2(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled= True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -626,7 +616,6 @@ class PlaneAssembly2(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled= True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -654,7 +643,6 @@ class PlaneAssembly2(FactoryTask):
             [0.0, 1.0, 0.0, -0.006],
             [-1.0, 0.0, 0.0, -0.13],
             [0.0, 0.0, 0.0, 1.0]]),
-        # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
@@ -731,7 +719,6 @@ class PlaneAssembly3(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -805,7 +792,6 @@ class PlaneAssembly3(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled= (task_idx in [1])),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -834,7 +820,6 @@ class PlaneAssembly3(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled= (task_idx in [2])),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -863,7 +848,6 @@ class PlaneAssembly3(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled= True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -954,7 +938,6 @@ class PlaneAssembly4(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -1028,7 +1011,6 @@ class PlaneAssembly4(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled = True),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),

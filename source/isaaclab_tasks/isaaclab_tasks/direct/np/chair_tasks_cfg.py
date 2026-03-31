@@ -2,7 +2,7 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
-import os, sys
+import os
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.utils import configclass
@@ -36,7 +36,7 @@ class HeldAssetCfg:
 class RobotCfg:
     robot_usd: str = ""
     franka_fingerpad_length: float = 0.017608
-    friction: float = 5.0
+    friction: float = 0.75
 
 
 @configclass
@@ -157,7 +157,7 @@ class Frame(HeldAssetCfg):
 class Plug(HeldAssetCfg):
     usd_path = f"{CHAIR_ASSET_DIR}/plug.usd"
     diameter = 0.007986
-    height = 0.015
+    height = 0.01
     mass = 0.001  # Mass is set to 0.001 to avoid large forces during insertion.
 
 @configclass
@@ -190,7 +190,7 @@ class ChairAssembly1(FactoryTask):
     #! crtie: task 3 is "insert the backrest into the frame via the plug",
     #! crtie: task 4 is "insert the plug1 into the backrest".
     #! crtie: task 5 is "insert the plug2 into the backrest".
-    task_idx = 3
+    task_idx = 1
 
 
     name = "chair_assembly"
@@ -218,7 +218,6 @@ class ChairAssembly1(FactoryTask):
         hand_init_pos: list = [0.0, 0.0, 0.28]
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -262,7 +261,7 @@ class ChairAssembly1(FactoryTask):
         ),
 
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(-0.16, -0.3, 0.74), rot=(0.707, 0.707, 0.0, 0.0), joint_pos={}, joint_vel={}
+            pos=(0.0, -0.25, 0.74), rot=(0.707, 0.707, 0.0, 0.0), joint_pos={}, joint_vel={}
         ),
         actuators={},
     )
@@ -353,9 +352,9 @@ class ChairAssembly1(FactoryTask):
         base_path = "/World/envs/env_.*/FixedAsset",
         connector_path = "/World/envs/env_.*/Plug1",
         pose_to_base = np.array(
-            [[-0.97, 0.0, 0.0, 0.01824],
+            [[-0.97, 0.0, 0.0, 0.01717465],
             [0.24, 0.0, 1.0, 0.0373803],
-            [0.0, 1.0, 0.0, -0.45],
+            [0.0, 1.0, 0.0, -0.24663083],
             [0.0, 0.0, 0.0, 1.0]]),
         axis_r = np.array([0.0, 1.0, 0.0]),
         axis_t = np.array([0.0, 1.0, 0.0]),
@@ -428,7 +427,7 @@ class ChairAssembly2(FactoryTask):
     #! crtie: task 3 is "insert the rod into the frame via the plug",
     #! crtie: task 4 is "insert the plug1 into the rod".
     #! crtie: task 5 is "insert the plug2 into the rod".
-    task_idx = 5
+    task_idx = 3
 
 
     name = "chair_assembly"
@@ -458,7 +457,6 @@ class ChairAssembly2(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -692,7 +690,6 @@ class ChairAssembly3(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -910,7 +907,6 @@ class ChairAssembly4(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -1029,7 +1025,6 @@ class ChairAssembly5(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -1101,7 +1096,6 @@ class ChairAssembly5(FactoryTask):
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,)
-                                                             #collision_enabled=False),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -1244,7 +1238,6 @@ class ChairAssembly6(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -1290,7 +1283,6 @@ class ChairAssembly6(FactoryTask):
 
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(-0.1, -0.1, 1.3), rot=(1.0, 0.0, 0.0, 0.0), joint_pos={}, joint_vel={}
-            # pos=(-0.16, -0.14, 3.20), rot=(1.0, 0.0, 0.0, 0.0), joint_pos={}, joint_vel={}
         ),
         actuators={},
     )

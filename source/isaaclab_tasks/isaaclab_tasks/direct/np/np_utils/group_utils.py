@@ -1,12 +1,10 @@
 import torch
 import numpy as np
 import torch.nn.functional as F
-from pdb import set_trace as bp
 from scipy.spatial.transform import Rotation as R
 
 
 def bgs(d6s):
-    # print(d6s.shape)
     b_copy = d6s.clone()
     bsz = d6s.shape[0]
     b1 = F.normalize(d6s[:, :, 0], p=2, dim=1)

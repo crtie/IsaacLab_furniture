@@ -2,8 +2,6 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
-import sys, os
-sys.path.append(os.path.abspath(__file__))
 
 import numpy as np
 import torch
@@ -21,10 +19,9 @@ from isaaclab.utils.math import axis_angle_from_quat
 from . import factory_control as fc
 from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChair3Cfg
 from .chair_tasks_cfg import ChairAssembly1, ConnectionCfg
-from pdb import set_trace as bp
 from .np_utils.group_utils import SE3dist
 from scipy.spatial.transform import Rotation as R
-import torch
+
 from pxr import Usd, UsdPhysics, PhysxSchema, Sdf, Gf, Tf
 from omni.physx.scripts import utils
 import omni.usd
@@ -385,11 +382,7 @@ class FrankaChair3Env(DirectRLEnv):
 
         to_path = held_prim.GetPath()
         from_path = fixed_prim.GetPath()
-        # rel_mat1 = self._get_real_mat()
         rel_mat = connection_cfg.pose_to_base
-        # rel_mat = np.eye(4, dtype=np.float32)
-        # rel_mat[:3, :3] = rel_mat1[:3, :3]
-        # rel_mat[:3, 3] = rel_mat2[:3, 3]
         pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
         rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
         rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
@@ -414,12 +407,9 @@ class FrankaChair3Env(DirectRLEnv):
 
         R_dist, R_axis, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
         print("rel_mat:", rel_mat)
-        # print("gt_real_mat:", gt_real_mat)
-        # bp()
         print("R_dist:", R_dist)
         print("t_tangent:", t_tangent)
         print("t_normal:", t_normal)
-        # print("joint names of frame:",self._fixed_asset.joint_names)
         if not self.joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.01:
             self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
             self.joint_created = True
@@ -436,16 +426,16 @@ class FrankaChair3Env(DirectRLEnv):
             print("Not creating fixed joint yet, waiting for conditions to be met.")
 
     def _sync_held_asset(self):
-        # 1. 获取当前相对位姿和目标相对位姿
-        rel_mat = self._get_real_mat()  # 当前 held 相对 fixed 的4x4矩阵
-        gt_real_mat = self._connection_cfg.pose_to_base  # 目标相对位姿
+        # 1. Get current and target relative poses
+        rel_mat = self._get_real_mat()  # Current held-to-fixed 4x4 matrix
+        gt_real_mat = self._connection_cfg.pose_to_base  # Target relative pose
 
         R_dist, R_axis, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
-        delta_theta = R_axis - self.R_axis  # 计算旋转轴的变化量
+        delta_theta = R_axis - self.R_axis  # Compute rotation axis delta
 
-        # 5. 根据螺距 pitch 计算z方向的位移
-        pitch = getattr(self._connection_cfg, "pitch", 0.5)  # 螺距，单位：米/弧度
-        dz = float(delta_theta * pitch)  # 螺旋升降量
+        # 5. Compute Z displacement from thread pitch
+        pitch = getattr(self._connection_cfg, "pitch", 0.5)  # Thread pitch, unit: m/rad
+        dz = float(delta_theta * pitch)  # Helical displacement
         print("dz:", dz)
         if abs(dz) >0.1:
             print("triggering joint limit1")
@@ -470,9 +460,6 @@ class FrankaChair3Env(DirectRLEnv):
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
 
-        # self.actions = (
-        #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
-        # )
         self.actions = action.clone()
 
     def close_gripper_in_place(self):
@@ -513,7 +500,6 @@ class FrankaChair3Env(DirectRLEnv):
 
     def _apply_action(self):
         """Apply actions for policy as delta targets from current position."""
-        # print("current actions:", self.actions)
         # Get current yaw for success checking.
         _, _, curr_yaw = torch_utils.get_euler_xyz(self.fingertip_midpoint_quat)
         self.curr_yaw = torch.where(curr_yaw > np.deg2rad(235), curr_yaw - 2 * np.pi, curr_yaw)
@@ -594,7 +580,6 @@ class FrankaChair3Env(DirectRLEnv):
 
         # set target for gripper joints to use physx's PD controller
         self.ctrl_target_joint_pos[:, 7:9] = self.ctrl_target_gripper_dof_pos
-        # self.joint_torque[:, 7:9] = 0.0
 
         self._robot.set_joint_position_target(self.ctrl_target_joint_pos)
         self._robot.set_joint_effort_target(self.joint_torque)
@@ -787,7 +772,6 @@ class FrankaChair3Env(DirectRLEnv):
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
             held_asset_relative_pos[:, 0] = 0.025
             held_asset_relative_pos[:, 1] = -0.01
-            # held_asset_relative_pos[:, 2] = 0.05
         else:
             raise NotImplementedError("Task not implemented")
 
@@ -848,8 +832,6 @@ class FrankaChair3Env(DirectRLEnv):
         # (1.c.) Velocity
         fixed_state[:, 7:] = 0.0  # vel
         # (1.d.) Update values.
-        # self._fixed_asset.write_root_pose_to_sim(fixed_state[:, 0:7], env_ids=env_ids)
-        # self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:], env_ids=env_ids)
         self._fixed_asset.reset()
 
         # (1.e.) Noisy position observation.
@@ -1062,5 +1044,5 @@ class FrankaChair3Env(DirectRLEnv):
 
         # Set initial gains for the episode.
         self._set_gains(self.default_gains)
-        physics_sim_view.set_gravity(carb.Float3(*self.cfg.sim.gravity))
         self.step_sim_no_action()
+        physics_sim_view.set_gravity(carb.Float3(*self.cfg.sim.gravity))

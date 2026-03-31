@@ -2,8 +2,7 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
-import sys, os
-sys.path.append(os.path.abspath(__file__))
+import os
 
 import numpy as np
 import torch
@@ -21,10 +20,9 @@ from isaaclab.utils.math import axis_angle_from_quat
 from . import factory_control as fc
 from .np_env_cfg import OBS_DIM_CFG, STATE_DIM_CFG, FrankaChair2Cfg
 from .chair_tasks_cfg import ChairAssembly1, ConnectionCfg
-from pdb import set_trace as bp
 from .np_utils.group_utils import SE3dist
 from scipy.spatial.transform import Rotation as R
-import torch
+
 from pxr import Usd, UsdPhysics, PhysxSchema, Sdf, Gf, Tf
 from omni.physx.scripts import utils
 import omni.usd
@@ -33,6 +31,7 @@ class FrankaChair2Env(DirectRLEnv):
     cfg: FrankaChair2Cfg
 
     def __init__(self, cfg: FrankaChair2Cfg, render_mode: str | None = None, **kwargs):
+        self.print_counter = 0  # For controlling print frequency
         # Update number of obs/states
         cfg.observation_space = sum([OBS_DIM_CFG[obs] for obs in cfg.obs_order])
         cfg.state_space = sum([STATE_DIM_CFG[state] for state in cfg.state_order])
@@ -240,6 +239,12 @@ class FrankaChair2Env(DirectRLEnv):
         self.joint_pos = self._robot.data.joint_pos.clone()
         self.joint_vel = self._robot.data.joint_vel.clone()
 
+        self.print_counter += 1
+        if self.print_counter % 50 == 0:  # Print status every 50 steps
+            pos = self.fingertip_midpoint_pos[0].cpu().numpy()
+            quat = self.fingertip_midpoint_quat[0].cpu().numpy()
+            print(f"[DEBUG] Gripper pos: {pos}, quat: {quat}")
+
         # Finite-differencing results in more reliable velocity estimates.
         self.ee_linvel_fd = (self.fingertip_midpoint_pos - self.prev_fingertip_pos) / dt
         self.prev_fingertip_pos = self.fingertip_midpoint_pos.clone()
@@ -385,11 +390,7 @@ class FrankaChair2Env(DirectRLEnv):
 
         to_path = held_prim.GetPath()
         from_path = fixed_prim.GetPath()
-        # rel_mat1 = self._get_real_mat()
         rel_mat = connection_cfg.pose_to_base
-        # rel_mat = np.eye(4, dtype=np.float32)
-        # rel_mat[:3, :3] = rel_mat1[:3, :3]
-        # rel_mat[:3, 3] = rel_mat2[:3, 3]
         pos1 = Gf.Vec3f([float(rel_mat[0, 3]), float(rel_mat[1, 3]), float(rel_mat[2, 3])])
         rot1q = torch_utils.rot_matrices_to_quats(torch.tensor(rel_mat[:3, :3]))
         rot1 = Gf.Quatf(float(rot1q[0]), float(rot1q[1]), float(rot1q[2]), float(rot1q[3]))
@@ -413,13 +414,6 @@ class FrankaChair2Env(DirectRLEnv):
         gt_real_mat = self._connection_cfg.pose_to_base
 
         R_dist, R_axis, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
-        print("rel_mat:", rel_mat)
-        # print("gt_real_mat:", gt_real_mat)
-        # bp()
-        print("R_dist:", R_dist)
-        print("t_tangent:", t_tangent)
-        print("t_normal:", t_normal)
-        # print("joint names of frame:",self._fixed_asset.joint_names)
         if not self.joint_created and R_dist < 0.1 and t_tangent < 0.003 and t_normal < 0.01:
             self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
             self.joint_created = True
@@ -433,19 +427,19 @@ class FrankaChair2Env(DirectRLEnv):
         elif self.joint_created :
             print("Fixed joint already created.")
         else:
-            print("Not creating fixed joint yet, waiting for conditions to be met.")
+            pass
 
     def _sync_held_asset(self):
-        # 1. 获取当前相对位姿和目标相对位姿
-        rel_mat = self._get_real_mat()  # 当前 held 相对 fixed 的4x4矩阵
-        gt_real_mat = self._connection_cfg.pose_to_base  # 目标相对位姿
+        # 1. Get current and target relative poses
+        rel_mat = self._get_real_mat()  # Current held-to-fixed 4x4 matrix
+        gt_real_mat = self._connection_cfg.pose_to_base  # Target relative pose
 
         R_dist, R_axis, t_tangent, t_normal = SE3dist(rel_mat, gt_real_mat, self._connection_cfg)
-        delta_theta = R_axis - self.R_axis  # 计算旋转轴的变化量
+        delta_theta = R_axis - self.R_axis  # Compute rotation axis delta
 
-        # 5. 根据螺距 pitch 计算z方向的位移
-        pitch = getattr(self._connection_cfg, "pitch", 0.5)  # 螺距，单位：米/弧度
-        dz = float(delta_theta * pitch)  # 螺旋升降量
+        # 5. Compute Z displacement from thread pitch
+        pitch = getattr(self._connection_cfg, "pitch", 0.5)  # Thread pitch, unit: m/rad
+        dz = float(delta_theta * pitch)  # Helical displacement
         print("dz:", dz)
         if abs(dz) >0.1:
             print("triggering joint limit1")
@@ -462,18 +456,239 @@ class FrankaChair2Env(DirectRLEnv):
 
 
 
+    def process_force_for_dev_experiment(self):
+        """
+        Development experiment mode (no force sensor):
+        Phase 1: gripper only moves down, switches phase after Z stabilizes for 1s.
+        Phase 2: grid scan centered on contact point, keeps pressing down.
+        Phase 3: stop when rapid Z drop detected (possibly inserted into hole).
+        """
+
+        z_pos = self.fingertip_midpoint_pos[0, 2].item()
+        x_pos = self.fingertip_midpoint_pos[0, 0].item()
+        y_pos = self.fingertip_midpoint_pos[0, 1].item()
+
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "xyz.txt"), "a") as f:
+                f.write(f"{x_pos:.6f}\t{y_pos:.6f}\t{z_pos:.6f}\n")
+        except Exception as e:
+            print(f"[DevGeo] Warning: failed to log xyz ({e})")
+
+        # Initialize variables
+        if not hasattr(self, "dev_phase"):
+            os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs"), exist_ok=True)
+            self.dev_phase = "descending"
+            self._elapsed_time = 0.0
+            self.z_history = []
+            self.contact_xy = None
+            self.print_counter = 0
+
+            # Orientation setup: fixed pitch -20 deg
+            current_quat = self.fingertip_midpoint_quat[0]
+            pitch = np.deg2rad(0.0)
+            rot_offset = torch.tensor(
+                [np.cos(pitch / 2), 0.0, np.sin(pitch / 2), 0.0],
+                dtype=torch.float32, device=self.device
+            )
+            self.dev_target_quat = torch_utils.quat_mul(
+                rot_offset.unsqueeze(0), current_quat.unsqueeze(0)
+            )[0]
+
+        dt = self.sim.get_physics_dt()
+        self._elapsed_time += dt
+        window_len = int(1.0 / dt)
+        self.print_counter += 1
+
+        # Print status every 50 steps
+        if self.print_counter % 50 == 0:
+            print(f"[DevGeo] phase={self.dev_phase}, z={z_pos:.4f}, x={x_pos:.4f}, y={y_pos:.4f}")
+
+        # Keep fixed orientation
+        self.ctrl_target_fingertip_midpoint_quat[:] = self.dev_target_quat
+
+        # ========== Phase 1: descend until Z stabilizes ==========
+        if self.dev_phase == "descending":
+            self.ctrl_target_fingertip_midpoint_pos[:, :] = self.fingertip_midpoint_pos
+            self.ctrl_target_fingertip_midpoint_pos[:, 2] -= 0.001  # Press down
+
+            self.z_history.append(z_pos)
+            if len(self.z_history) > window_len:
+                self.z_history.pop(0)
+
+            if len(self.z_history) == window_len:
+                z_range = max(self.z_history) - min(self.z_history)
+                if z_range < 0.0002:
+                    print("[DevGeo] Z stable for 1s, switch to grid scan.")
+                    self.dev_phase = "grid"
+                    self.contact_xy = self.fingertip_midpoint_pos[0, :2].clone()
+                    self.z_history.clear()
+                    self.grid_index = 0
+
+                    # Construct grid points
+                    grid_range = 0.01
+                    grid_step = 0.002
+                    xs = torch.arange(-grid_range, grid_range + grid_step, grid_step, device=self.device)
+                    ys = torch.arange(-grid_range, grid_range + grid_step, grid_step, device=self.device)
+                    self.grid_points = []
+                    for i, x in enumerate(xs):
+                        row = ys if i % 2 == 0 else ys.flip(0)
+                        for y in row:
+                            self.grid_points.append(self.contact_xy + torch.tensor([x, y], device=self.device))
+                    self.grid_target = self.grid_points[0]
+
+        # ========== Phase 2: XY grid scan + Z press ==========
+        elif self.dev_phase == "grid":
+            # Initialize path on first entry to grid phase
+            if not hasattr(self, "grid_initialized"):
+                self.grid_initialized = True
+                self.grid_timer = 0.0  # Timer in seconds
+                self.grid_index = 0
+                self.grid_points = []
+
+                # Grid settings
+                num_points = 5
+                grid_step = 0.01 / (num_points - 1)  # = 0.0025
+                start_xy = self.contact_xy.clone()  # Top-left as reference point
+
+                for row in range(num_points):
+                    row_y = start_xy[1] - row * grid_step
+                    x_range = range(num_points) if row % 2 == 0 else reversed(range(num_points))
+                    for col in x_range:
+                        col_x = start_xy[0] + col * grid_step
+                        self.grid_points.append(torch.tensor([col_x, row_y], device=self.device))
+
+                print(f"[DevGeo] Initialized grid with {len(self.grid_points)} points.")
+            
+            # Z value check (if dropped into hole, descend immediately)
+            if z_pos < 0.931:
+                print(f"[DevGeo] z_pos={z_pos:.4f} < 0.931 — start descent.")
+                self.dev_phase = "descent_into_hole"
+                return
+
+
+            # Switch to next grid point every second
+            self.grid_timer += dt
+            if self.grid_timer >= 1.0:
+                self.grid_index += 1
+                self.grid_timer = 0.0
+
+            # Check if traversal is complete
+            if self.grid_index >= len(self.grid_points):
+                print("[DevGeo] Grid traversal complete.")
+                self.dev_phase = "stop"
+                return
+
+            # Update control target
+            target_xy = self.grid_points[self.grid_index]
+            self.ctrl_target_fingertip_midpoint_pos[:, 0] = target_xy[0]
+            self.ctrl_target_fingertip_midpoint_pos[:, 1] = target_xy[1]
+            self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.fingertip_midpoint_pos[0, 2] - 0.001
+
+            # Print position
+            if self.print_counter % 50 == 0:
+                print(f"[DevGeo] Moving to grid point {self.grid_index}: {target_xy.tolist()}")
+
+
+        # ========== Phase 3: stop control ==========
+        elif self.dev_phase == "stop":
+            self.ctrl_target_fingertip_midpoint_pos[:, :] = self.fingertip_midpoint_pos
+
+
+        elif self.dev_phase == "descent_into_hole":
+            # Initialize fine grid
+            if not hasattr(self, "fine_grid_initialized"):
+                self.fine_grid_initialized = True
+                self.fine_grid_timer = 0.0
+                self.fine_grid_index = 0
+                self.z_history = []
+                self.fine_grid_points = []
+
+                # Build finer-range grid (3x3, step 0.0015, span ~0.003)
+                num_points = 3
+                grid_step = 0.003 / (num_points - 1)  # 0.0015
+                start_xy = self.fingertip_midpoint_pos[0, :2].clone()  # Current point as starting point
+
+                for row in range(num_points):
+                    row_y = start_xy[1] - row * grid_step
+                    x_range = range(num_points) if row % 2 == 0 else reversed(range(num_points))
+                    for col in x_range:
+                        col_x = start_xy[0] + col * grid_step
+                        self.fine_grid_points.append(torch.tensor([col_x, row_y], device=self.device))
+
+                print(f"[DevGeo] Initialized fine grid with {len(self.fine_grid_points)} points.")
+
+           
+            # Current Z coordinate
+            z_pos = self.fingertip_midpoint_pos[0, 2].item()
+
+            # Record Z history, detect if descending
+            self.z_history.append(z_pos)
+            if len(self.z_history) > 10:
+                self.z_history.pop(0)
+
+            if len(self.z_history) == 10:
+                z_range = max(self.z_history) - min(self.z_history)
+                if z_range > 0.0003:
+                    print(f"[DevGeo] Z dropped during fine search, continue descent.")
+                    self.dev_phase = "deep_descent"
+                    return
+
+            # Switch to next grid point every second
+            self.fine_grid_timer += dt
+            if self.fine_grid_timer >= 1.0:
+                self.fine_grid_index += 1
+                self.fine_grid_timer = 0.0
+                self.z_history.clear()
+
+            # Check if complete
+            if self.fine_grid_index >= len(self.fine_grid_points):
+                print("[DevGeo] Fine grid scan complete. No hole detected.")
+                self.dev_phase = "stop"
+                return
+
+            # Control target position (XY grid + Z press)
+            target_xy = self.fine_grid_points[self.fine_grid_index]
+            self.ctrl_target_fingertip_midpoint_pos[:, 0] = target_xy[0]
+            self.ctrl_target_fingertip_midpoint_pos[:, 1] = target_xy[1]
+            self.ctrl_target_fingertip_midpoint_pos[:, 2] = self.fingertip_midpoint_pos[0, 2] - 0.001
+
+            if self.print_counter % 50 == 0:
+                print(f"[DevGeo] Fine grid point {self.fine_grid_index}: {target_xy.tolist()}, z={z_pos:.4f}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def _pre_physics_step(self, action):
-        """Apply policy actions with smoothing."""
+        # Check assembly conditions first
         self._check_attach_condition()
+
+        # Development experiment: simple force-sensor-based control
+        self.process_force_for_dev_experiment()
+
+        # Normal RL logic
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self._reset_buffers(env_ids)
 
-        # self.actions = (
-        #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
-        # )
+        # Save RL actions
         self.actions = action.clone()
+
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
@@ -513,7 +728,6 @@ class FrankaChair2Env(DirectRLEnv):
 
     def _apply_action(self):
         """Apply actions for policy as delta targets from current position."""
-        # print("current actions:", self.actions)
         # Get current yaw for success checking.
         _, _, curr_yaw = torch_utils.get_euler_xyz(self.fingertip_midpoint_quat)
         self.curr_yaw = torch.where(curr_yaw > np.deg2rad(235), curr_yaw - 2 * np.pi, curr_yaw)
@@ -557,14 +771,15 @@ class FrankaChair2Env(DirectRLEnv):
         self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_mul(rot_actions_quat, self.fingertip_midpoint_quat)
 
         target_euler_xyz = torch.stack(torch_utils.get_euler_xyz(self.ctrl_target_fingertip_midpoint_quat), dim=1)
-        target_euler_xyz[:, 0] = 3.14159  # Restrict actions to be upright.
-        target_euler_xyz[:, 1] = 0.0
 
         self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_from_euler_xyz(
             roll=target_euler_xyz[:, 0], pitch=target_euler_xyz[:, 1], yaw=target_euler_xyz[:, 2]
-        )
+        ) 
 
         self.ctrl_target_gripper_dof_pos = 0.015 if gripper_actions < 0.0 else 0.0
+
+                    # 2. Force override RL, disable keyboard control
+        self.process_force_for_dev_experiment()
         self.generate_ctrl_signals()
 
     def _set_gains(self, prop_gains, rot_deriv_scale=1.0):
@@ -594,7 +809,6 @@ class FrankaChair2Env(DirectRLEnv):
 
         # set target for gripper joints to use physx's PD controller
         self.ctrl_target_joint_pos[:, 7:9] = self.ctrl_target_gripper_dof_pos
-        # self.joint_torque[:, 7:9] = 0.0
 
         self._robot.set_joint_position_target(self.ctrl_target_joint_pos)
         self._robot.set_joint_effort_target(self.joint_torque)
@@ -602,8 +816,8 @@ class FrankaChair2Env(DirectRLEnv):
     def _get_dones(self):
         """Update intermediate values used for rewards and observations."""
         self._compute_intermediate_values(dt=self.physics_dt)
-        time_out = self.episode_length_buf >= self.max_episode_length - 1
-        return time_out, time_out
+         # Never end (never auto-timeout reset)
+        return torch.zeros_like(self.reset_buf, dtype=torch.bool), torch.zeros_like(self.reset_buf, dtype=torch.bool)
 
     def _get_curr_successes(self, success_threshold, check_rot=False):
         """Get success mask at current timestep."""
@@ -787,7 +1001,6 @@ class FrankaChair2Env(DirectRLEnv):
             held_asset_relative_pos[:, 2] -= self.cfg_task.robot_cfg.franka_fingerpad_length
             held_asset_relative_pos[:, 0] = 0.025
             held_asset_relative_pos[:, 1] = -0.01
-            # held_asset_relative_pos[:, 2] = 0.05
         else:
             raise NotImplementedError("Task not implemented")
 
@@ -848,8 +1061,6 @@ class FrankaChair2Env(DirectRLEnv):
         # (1.c.) Velocity
         fixed_state[:, 7:] = 0.0  # vel
         # (1.d.) Update values.
-        # self._fixed_asset.write_root_pose_to_sim(fixed_state[:, 0:7], env_ids=env_ids)
-        # self._fixed_asset.write_root_velocity_to_sim(fixed_state[:, 7:], env_ids=env_ids)
         self._fixed_asset.reset()
 
         # (1.e.) Noisy position observation.
@@ -874,6 +1085,7 @@ class FrankaChair2Env(DirectRLEnv):
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
             rela_trans[:, 1] += 0.22
             rela_trans[:, 0] += 0.22
+            # Initialize gripper
 
 
         elif self.cfg_task.task_idx == 3:
@@ -904,6 +1116,9 @@ class FrankaChair2Env(DirectRLEnv):
             hand_init_pos_rand = torch.tensor(self.cfg_task.hand_init_pos_noise, device=self.device)
             above_fixed_pos_rand = above_fixed_pos_rand @ torch.diag(hand_init_pos_rand)
             rela_trans[bad_envs] += above_fixed_pos_rand
+            # Initialize position
+            rela_trans[:] = torch.tensor([0.12356316, -0.05047272, 0.93336756], device=self.device)
+
 
             # (b) get random orientation facing down
             hand_down_euler = (
@@ -1062,5 +1277,5 @@ class FrankaChair2Env(DirectRLEnv):
 
         # Set initial gains for the episode.
         self._set_gains(self.default_gains)
-        physics_sim_view.set_gravity(carb.Float3(*self.cfg.sim.gravity))
         self.step_sim_no_action()
+        physics_sim_view.set_gravity(carb.Float3(*self.cfg.sim.gravity))

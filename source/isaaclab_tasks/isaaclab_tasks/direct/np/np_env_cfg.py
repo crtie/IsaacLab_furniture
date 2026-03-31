@@ -53,7 +53,6 @@ class ObsRandCfg:
 class CtrlCfg:
     ema_factor = 0.2
 
-    # pos_action_bounds = [0.05, 0.05, 0.05]
     pos_action_bounds = [1.0, 1.0, 0.2]
     rot_action_bounds = [1.0, 1.0, 1.0]
 
@@ -154,7 +153,6 @@ class FactoryEnvCfg(DirectRLEnvCfg):
                 "panda_joint5": -0.00083,
                 "panda_joint6": 1.38774,
                 "panda_joint7": 0.0,
-                "panda_finger_joint1": 0.04,
                 "panda_finger_joint2": 0.04,
             },
             pos=(-0.55, 0.0, 0.75),
@@ -184,7 +182,7 @@ class FactoryEnvCfg(DirectRLEnvCfg):
                 effort_limit=40.0,
                 velocity_limit=0.04,
                 stiffness=7500.0,
-                damping=500.0,
+                damping=173.0,
                 friction=0.1,
                 armature=0.0,
             ),
@@ -193,10 +191,17 @@ class FactoryEnvCfg(DirectRLEnvCfg):
 
 
 @configclass
+class PegCtrlCfg(CtrlCfg):
+    """Control config matching peg OK source: higher gains for stiffer control."""
+    default_task_prop_gains = [500, 500, 500, 50, 50, 50]
+
+@configclass
 class FrankaChair1Cfg(FactoryEnvCfg):
     task_name = "chair_assembly1"
     task = ChairAssembly1()
     episode_length_s = 30.0
+    decimation = 1
+    ctrl: CtrlCfg = PegCtrlCfg()
 
 
 @configclass
@@ -204,6 +209,7 @@ class FrankaChair2Cfg(FactoryEnvCfg):
     task_name = "chair_assembly2"
     task = ChairAssembly2()
     episode_length_s = 30.0
+    decimation = 1
 
 
 @configclass
@@ -217,6 +223,7 @@ class FrankaChair4Cfg(FactoryEnvCfg):
     task_name = "chair_assembly4"
     task = ChairAssembly4()
     episode_length_s = 30.0
+    decimation = 1
 
 @configclass
 class FrankaChair5Cfg(FactoryEnvCfg):

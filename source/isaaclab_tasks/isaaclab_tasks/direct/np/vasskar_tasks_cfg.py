@@ -2,7 +2,7 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
-import os, sys
+import os
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.utils import configclass
@@ -147,7 +147,7 @@ class VasskarAssembly1(FactoryTask):
     #! crtie: task 2 is "the second top frame",
     #! crtie: task 3 is "the side frame".,
 
-    task_idx = 3
+    task_idx = 1
 
 
     name = "vasskar_assembly"
@@ -169,7 +169,6 @@ class VasskarAssembly1(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
@@ -215,7 +214,6 @@ class VasskarAssembly1(FactoryTask):
 
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.16, -0.15, 0.74), rot=(0.0, 0.0, 1.0, 0.0), joint_pos={}, joint_vel={}
-            # pos=(-0.16, -0.14, 3.20), rot=(1.0, 0.0, 0.0, 0.0), joint_pos={}, joint_vel={}
         ),
         actuators={},
     )
@@ -244,7 +242,6 @@ class VasskarAssembly1(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled=(task_idx in [1,3])),
-                                                            # collision_enabled = False),
                                                             
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -273,7 +270,6 @@ class VasskarAssembly1(FactoryTask):
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3,
                                                              collision_enabled=(task_idx in [2,3])),
-                                                            # collision_enabled = False),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -316,7 +312,6 @@ class VasskarAssembly1(FactoryTask):
             [1.0, 0.0, 0.0, 0.03],
             [0.0, -1.0, 0.0, -0.0165],
             [0.0, 0.0, 0.0, 1.0]]),
-        # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
@@ -329,7 +324,6 @@ class VasskarAssembly1(FactoryTask):
             [0.0, 0.0, -1.0, 0.03],
             [1.0, 0.0, 0.0, -0.416],
             [0.0, 0.0, 0.0, 1.0]]),
-        # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
@@ -342,7 +336,6 @@ class VasskarAssembly1(FactoryTask):
             [1.0, 0.0, 0.0, 0.21],
             [0.0, -1.0, 0.0, -0.0165],
             [0.0, 0.0, 0.0, 1.0]]),
-        # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
@@ -355,7 +348,6 @@ class VasskarAssembly1(FactoryTask):
             [0.0, 0.0, -1.0, 0.21],
             [1.0, 0.0, 0.0, -0.416],
             [0.0, 0.0, 0.0, 1.0]]),
-        # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
@@ -368,7 +360,6 @@ class VasskarAssembly1(FactoryTask):
             [0.0, 1.0, 0.0, 0.001],
             [0.0, 0.0, -1.0, -0.432],
             [0.0, 0.0, 0.0, 1.0]]),
-        # axis_r = np.array([0.0, 0.0, 1.0]),
         axis_t = np.array([0.0, 0.0, 1.0]),
     )
 
@@ -382,7 +373,7 @@ class VasskarAssembly2(FactoryTask):
     #! crtie: task 3 is "the third screw"
     #! crtie: task 4 is "the fourth screw".
 
-    task_idx = 4
+    task_idx = 1
 
 
     name = "vasskar_assembly"
@@ -403,7 +394,6 @@ class VasskarAssembly2(FactoryTask):
 
 
     # Fixed Asset (applies to all tasks)
-    # fixed_asset_init_pos_noise: list = [0.05, 0.05, 0.05]
     fixed_asset_init_pos_noise: list = [0.00, 0.00, 0.00]
     fixed_asset_init_orn_deg: float = 0.0
     fixed_asset_init_orn_range_deg: float = 360.0
