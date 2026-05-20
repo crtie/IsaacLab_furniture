@@ -78,6 +78,12 @@ class FrankaVasskar2Env(DirectRLEnv):
         self._set_friction(self._fixed_asset, self.cfg_task.fixed_asset_cfg.friction)
         self._set_friction(self._robot, self.cfg_task.robot_cfg.friction)
 
+        # Zero friction on the screw + base so the lateral alignment phase
+        # can slide on the top surface without binding. The robot gripper
+        # still holds the screw via its own friction (10.0).
+        self._set_friction(self._held_asset,  0.0)
+        self._set_friction(self._fixed_asset, 0.0)
+
     def _set_friction(self, asset, value):
         """Update material properties for a given asset."""
         materials = asset.root_physx_view.get_material_properties()
@@ -146,6 +152,22 @@ class FrankaVasskar2Env(DirectRLEnv):
 
         self.ep_succeeded = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
         self.ep_success_times = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+
+        # Scripted-policy state machine — STRICTLY per-task_idx state.
+        # idx ∈ {1, 2, 3, 4}; each idx has its own suffix-stamped tensors,
+        # so no state is shared / cross-mutated between task indices.
+        for _idx in (1, 2, 3, 4):
+            setattr(self, f"_xy_align_frames_{_idx}",
+                    torch.zeros((self.num_envs,), dtype=torch.long, device=self.device))
+            setattr(self, f"_xy_aligned_latched_{_idx}",
+                    torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device))
+            setattr(self, f"_near_hole_frames_{_idx}",
+                    torch.zeros((self.num_envs,), dtype=torch.long, device=self.device))
+            setattr(self, f"_press_down_latched_{_idx}",
+                    torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device))
+        # Legacy (unused but kept zeroed for any old call sites).
+        self._search_active_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._search_step = 0
 
     def _get_keypoint_offsets(self, num_keypoints):
         """Get uniformly-spaced keypoints along a line of unit length, centered at 0."""
@@ -539,9 +561,331 @@ class FrankaVasskar2Env(DirectRLEnv):
         indices = torch.zeros_like(all_envs)
         self.visualization_markers.visualize(loc, rots, marker_indices=indices)
 
+    def _visualize_4_holes(self):
+        """Draw the 4 cfg-target hole CENTERS in the world with tick
+        labels (1 tick = #1, ..., 4 ticks = #4). Console legend printed
+        once.
+
+        IMPORTANT: hole center is computed identically to the policy
+        (`_scripted_action_direct_insert`):
+            hole_local = cfg_t + cfg_R @ screw_axis_center_offset
+        where screw_axis_center accounts for the screw mesh origin
+        being offset from the actual screw central axis (~2–3 mm).
+        Skipping this term puts the markers a few mm off from the
+        true hole/axis line.
+
+        Colors: #1 RED  #2 ORANGE  #3 YELLOW  #4 PINK
+        """
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        if not getattr(self, "_holes_legend_printed", False):
+            print("\n[vasskar2] 4-hole viewer legend (one small sphere per hole):")
+            print("  #1 RED     — connection_cfg1.pose_to_base + axis_center")
+            print("  #2 ORANGE  — connection_cfg2.pose_to_base + axis_center")
+            print("  #3 YELLOW  — connection_cfg3.pose_to_base + axis_center")
+            print("  #4 PINK    — connection_cfg4.pose_to_base + axis_center")
+            self._holes_legend_printed = True
+
+        # Screw axis center offset — MUST stay in sync with the same
+        # constants in `_scripted_action_direct_insert`.
+        screw_scale_x = 0.4
+        screw_scale_y = 0.4
+        screw_axis_center_x = 0.0052 * screw_scale_x
+        screw_axis_center_y = 0.006  * screw_scale_y
+        axis_center_3 = torch.tensor(
+            [screw_axis_center_x, screw_axis_center_y, 0.0],
+            dtype=torch.float32, device=self.device,
+        )
+
+        cfgs = [
+            self.cfg_task.connection_cfg1,
+            self.cfg_task.connection_cfg2,
+            self.cfg_task.connection_cfg3,
+            self.cfg_task.connection_cfg4,
+        ]
+        COLORS = [
+            (1.0, 0.2, 0.2, 1.0),  # #1 red
+            (1.0, 0.6, 0.1, 1.0),  # #2 orange
+            (1.0, 1.0, 0.2, 1.0),  # #3 yellow
+            (1.0, 0.4, 0.7, 1.0),  # #4 pink
+        ]
+
+        env_origin = self.scene.env_origins[0]
+
+        # Draw a vertical line (along WORLD z) at each hole center.
+        half_len = 0.025   # 2.5 cm each way → 5 cm total length
+
+        # Save hole-center world positions for the active-hole target dots.
+        hole_centers_world = []
+
+        line_starts, line_ends, line_colors, line_sizes = [], [], [], []
+        for i, cfg in enumerate(cfgs):
+            pose_to_base = torch.as_tensor(
+                cfg.pose_to_base, dtype=torch.float32, device=self.device
+            )
+            cfg_R = pose_to_base[:3, :3]
+            cfg_t = pose_to_base[:3, 3]
+            # Hole-center axis-correction (same as policy).
+            axis_center_local = cfg_R @ axis_center_3
+            # Hole center in world.
+            hole_local = (cfg_t + axis_center_local).unsqueeze(0).repeat(self.num_envs, 1)
+            _, hole_world = torch_utils.tf_combine(
+                self.fixed_quat, self.fixed_pos, self.identity_quat, hole_local
+            )
+            hole_centers_world.append(hole_world)
+            center = (hole_world[0] + env_origin).detach().cpu().numpy()
+            cx, cy, cz = float(center[0]), float(center[1]), float(center[2])
+            # Vertical (world-z) line: start above the center, end below.
+            line_starts.append((cx, cy, cz + half_len))
+            line_ends.append(  (cx, cy, cz - half_len))
+            line_colors.append(COLORS[i])
+            line_sizes.append(3.0)
+
+        self._dbg_draw.clear_lines()
+        self._dbg_draw.draw_lines(line_starts, line_ends, line_colors, line_sizes)
+
+        # =============================================================
+        # Diagnostic dots — exact same constants/signs as the policy:
+        #   GREEN = peg_tip (current screw shaft tip in world)
+        #   CYAN  = above_target  for the active task_idx
+        #   WHITE = press_down_target for the active task_idx
+        # =============================================================
+        screw_usd_length = 0.05
+        screw_scale_z    = 0.45
+        approach_height  = 0.05   # MUST match `_scripted_action_direct_insert`
+        press_down_depth = 0.20
+
+        # peg_tip in world.
+        tip_offset_local = torch.zeros((self.num_envs, 3), device=self.device)
+        tip_offset_local[:, 0] = screw_axis_center_x
+        tip_offset_local[:, 1] = screw_axis_center_y
+        tip_offset_local[:, 2] = -screw_usd_length * screw_scale_z
+        _, peg_tip_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, tip_offset_local
+        )
+
+        # axis_t_world from the ACTIVE task's connection_cfg.
+        active_axis_t_local = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, active_axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, active_axis_t_local
+        )
+
+        # Active hole center (task_idx 1..4 → list index 0..3).
+        active_idx = max(0, min(3, int(self.cfg_task.task_idx) - 1))
+        active_hole_world = hole_centers_world[active_idx]
+
+        # Targets — keep identical to the policy formulas in
+        # `_scripted_action_direct_insert` so the diagnostic dots really
+        # match the points the controller is driving toward.
+        active_above      = active_hole_world + active_axis_t_world * approach_height
+        active_press_down = active_hole_world - active_axis_t_world * press_down_depth
+
+        def _to_world_tuple(t_world):
+            v = (t_world[0] + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        dot_points = [
+            _to_world_tuple(peg_tip_world),
+            _to_world_tuple(active_above),
+            _to_world_tuple(active_press_down),
+        ]
+        dot_colors = [
+            (0.2, 1.0, 0.2, 1.0),   # GREEN — peg tip
+            (0.0, 1.0, 1.0, 1.0),   # CYAN  — above_target
+            (1.0, 1.0, 1.0, 1.0),   # WHITE — press_down_target
+        ]
+        dot_sizes = [14.0, 10.0, 10.0]
+        self._dbg_draw.clear_points()
+        self._dbg_draw.draw_points(dot_points, dot_colors, dot_sizes)
+
+    def _compute_scripted_action(self):
+        """Router — dispatches to the per-task_idx scripted policy. Each
+        task_idx has its OWN state-variable set (suffixed `_1`, `_2`, ...),
+        so no state is shared between idx — strictly independent."""
+        self._visualize_4_holes()
+        idx = int(self.cfg_task.task_idx)
+        if idx not in (1, 2, 3, 4):
+            return None
+        return self._scripted_action_direct_insert(idx=idx)
+
+    def _scripted_action_direct_insert(self, idx):
+        """Direct insertion — 3-phase flow with xy-first alignment.
+        Same algorithm for all task_idx (1..4); only difference between
+        runs is the active `self._connection_cfg` (already routed by
+        task_idx upstream) and the per-idx STATE tensors accessed via
+        `_xy_align_frames_{idx}`, `_xy_aligned_latched_{idx}`,
+        `_near_hole_frames_{idx}`, `_press_down_latched_{idx}`.
+
+        A1) XY ALIGN (no descent): drive ONLY the perp-to-axis_t component
+            until peg is within perp_tol of the hole axis for N frames.
+        A2) APPROACH (full 3D): drive peg → above_target.
+        B ) PRESS DOWN: drive peg → press_down_target at full speed.
+        """
+        # ---- Per-idx state tensors (strictly independent — no sharing) ----
+        xy_align_frames    = getattr(self, f"_xy_align_frames_{idx}")
+        xy_aligned_latched = getattr(self, f"_xy_aligned_latched_{idx}")
+        near_hole_frames   = getattr(self, f"_near_hole_frames_{idx}")
+        press_down_latched = getattr(self, f"_press_down_latched_{idx}")
+
+        # ---- Tunables (same for all idx; each idx can be split out later
+        # by reading per-idx tunables if desired) ----
+        screw_usd_length    = 0.05
+        screw_scale_x       = 0.4
+        screw_scale_y       = 0.4
+        screw_scale_z       = 0.45
+        screw_axis_center_x = 0.0052 * screw_scale_x
+        screw_axis_center_y = 0.006  * screw_scale_y
+
+        approach_height  = 0.05
+        align_perp_tol   = 0.003
+        along_tol        = 0.01
+        dwell_xy_align   = 5
+        dwell_to_press   = 5
+        press_down_depth = 0.20
+        descent_scale    = 0.3
+
+        # ---- Peg tip in world ----
+        tip_offset_local = torch.zeros((self.num_envs, 3), device=self.device)
+        tip_offset_local[:, 0] = screw_axis_center_x
+        tip_offset_local[:, 1] = screw_axis_center_y
+        tip_offset_local[:, 2] = -screw_usd_length * screw_scale_z
+        _, peg_tip_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, tip_offset_local
+        )
+
+        # ---- Hole center in world ----
+        pose_to_base = torch.as_tensor(
+            self._connection_cfg.pose_to_base, dtype=torch.float32, device=self.device
+        )
+        cfg_R = pose_to_base[:3, :3]
+        cfg_t = pose_to_base[:3, 3]
+        axis_center_local = cfg_R @ torch.tensor(
+            [screw_axis_center_x, screw_axis_center_y, 0.0],
+            dtype=torch.float32, device=self.device,
+        )
+        hole_pos_local = (cfg_t + axis_center_local).unsqueeze(0).repeat(self.num_envs, 1)
+        _, hole_pos_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, hole_pos_local
+        )
+
+        # ---- Insertion axis in world ----
+        axis_t_local = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, axis_t_local
+        )
+
+        # ---- Targets ----
+        above_target      = hole_pos_world + axis_t_world * approach_height
+        press_down_target = hole_pos_world - axis_t_world * press_down_depth
+
+        # ---- Decompose peg→hole delta into perp + along components ----
+        delta_pt         = peg_tip_world - hole_pos_world
+        along_pt_signed  = (delta_pt * axis_t_world).sum(-1, keepdim=True)
+        perp_pt          = delta_pt - along_pt_signed * axis_t_world
+        peg_to_hole_perp = torch.norm(perp_pt, dim=-1)
+
+        # ---- Phase A1 → A2: xy alignment latch ----
+        xy_aligned = peg_to_hole_perp < align_perp_tol
+        xy_align_frames = torch.where(
+            xy_aligned,
+            xy_align_frames + 1,
+            torch.zeros_like(xy_align_frames),
+        )
+        xy_aligned_latched = xy_aligned_latched | (
+            xy_align_frames >= dwell_xy_align
+        )
+
+        # ---- Phase A2 → B: hover latch (xy + along both within tol) ----
+        d_above     = peg_tip_world - above_target
+        along_above = torch.abs((d_above * axis_t_world).sum(-1))
+        near_above  = (
+            xy_aligned_latched
+            & (peg_to_hole_perp < align_perp_tol)
+            & (along_above < along_tol)
+        )
+        near_hole_frames = torch.where(
+            near_above,
+            near_hole_frames + 1,
+            torch.zeros_like(near_hole_frames),
+        )
+        press_down_latched = press_down_latched | (
+            near_hole_frames >= dwell_to_press
+        )
+
+        # ---- Write per-idx state back ----
+        setattr(self, f"_xy_align_frames_{idx}",    xy_align_frames)
+        setattr(self, f"_xy_aligned_latched_{idx}", xy_aligned_latched)
+        setattr(self, f"_near_hole_frames_{idx}",   near_hole_frames)
+        setattr(self, f"_press_down_latched_{idx}", press_down_latched)
+
+        # ---- Per-phase target ----
+        in_phase_A1 = ~xy_aligned_latched
+        in_phase_A2 = xy_aligned_latched & (~press_down_latched)
+        in_phase_B  = press_down_latched
+
+        target = torch.where(
+            in_phase_B.unsqueeze(-1),
+            press_down_target,
+            above_target,
+        )
+
+        delta      = target - peg_tip_world
+        pos_action = delta / self.pos_threshold
+        pos_action = torch.clamp(pos_action, -1.0, 1.0)
+
+        # Phase A1: zero along-axis component (no descent until xy locked).
+        pa_along_signed = (pos_action * axis_t_world).sum(-1, keepdim=True)
+        pa_perp = pos_action - pa_along_signed * axis_t_world
+        pos_action = torch.where(
+            in_phase_A1.unsqueeze(-1),
+            pa_perp,
+            pos_action,
+        )
+
+        scale = torch.where(
+            in_phase_B.unsqueeze(-1),
+            torch.ones_like(pos_action),
+            torch.full_like(pos_action, descent_scale),
+        )
+        pos_action = pos_action * scale
+
+        if self.joint_created:
+            pos_action = torch.zeros_like(pos_action)
+
+        # ---- Every-frame diagnostic print ----
+        peg = peg_tip_world[0].tolist()
+        tgt = target[0].tolist()
+        hole = hole_pos_world[0].tolist()
+        phase = "A1-xy" if bool(in_phase_A1[0]) else ("A2-app" if bool(in_phase_A2[0]) else "B-press")
+        print(
+            f"[idx{idx} {phase}] "
+            f"peg=({peg[0]:+.4f},{peg[1]:+.4f},{peg[2]:+.4f})  "
+            f"tgt=({tgt[0]:+.4f},{tgt[1]:+.4f},{tgt[2]:+.4f})  "
+            f"hole=({hole[0]:+.4f},{hole[1]:+.4f},{hole[2]:+.4f})  "
+            f"perp={peg_to_hole_perp[0]*1000:.2f}mm "
+            f"along={along_above[0]*1000:.2f}mm  "
+            f"xy_latch={int(xy_aligned_latched[0])} "
+            f"press_latch={int(press_down_latched[0])}"
+        )
+
+        rot_action     = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action, rot_action, gripper_action], dim=-1)
+
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
-        # self._visualize_markers()
+        self._visualize_markers()
         self._check_attach_condition()
         if self.joint_created:
             self._sync_held_asset()
@@ -552,7 +896,11 @@ class FrankaVasskar2Env(DirectRLEnv):
         # self.actions = (
         #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
         # )
-        self.actions = action.clone()
+        scripted = self._compute_scripted_action()
+        if scripted is not None:
+            self.actions = scripted
+        else:
+            self.actions = action.clone()
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
@@ -795,6 +1143,16 @@ class FrankaVasskar2Env(DirectRLEnv):
         super()._reset_idx(env_ids)
         print("Resetting envs:", env_ids)
         self._remove_fixed_joint()
+        # Reset scripted-policy state — per-idx tensors are kept strictly
+        # separate, so reset clears ALL of them (only one is touched per
+        # run, but resetting all four keeps state machine deterministic).
+        for _idx in (1, 2, 3, 4):
+            getattr(self, f"_xy_align_frames_{_idx}").zero_()
+            getattr(self, f"_xy_aligned_latched_{_idx}").zero_()
+            getattr(self, f"_near_hole_frames_{_idx}").zero_()
+            getattr(self, f"_press_down_latched_{_idx}").zero_()
+        self._search_active_latched.zero_()
+        self._search_step = 0
         self._set_assets_to_default_pose(env_ids)
         self._set_franka_to_default_pose(joints=self.cfg.ctrl.reset_joints, env_ids=env_ids)
         self.step_sim_no_action()

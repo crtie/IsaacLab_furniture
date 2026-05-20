@@ -148,6 +148,9 @@ class FrankaLego4Env(DirectRLEnv):
         self.ep_succeeded = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
         self.ep_success_times = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
 
+        # Phase latch for lego4 idx=1 scripted insert (held=torso bottom-hole, fixed=hips2leg top peg).
+        self._press_down_latched_l4_1 = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+
     def _get_keypoint_offsets(self, num_keypoints):
         """Get uniformly-spaced keypoints along a line of unit length, centered at 0."""
         keypoint_offsets = torch.zeros((num_keypoints, 3), device=self.device)
@@ -300,6 +303,7 @@ class FrankaLego4Env(DirectRLEnv):
     def _reset_buffers(self, env_ids):
         """Reset buffers."""
         self.ep_succeeded[env_ids] = 0
+        self._press_down_latched_l4_1[env_ids] = False
 
 
     def _get_real_mat(self):
@@ -424,9 +428,152 @@ class FrankaLego4Env(DirectRLEnv):
         indices = torch.zeros_like(all_envs)
         self.visualization_markers.visualize(loc, rots, marker_indices=indices)
 
+    # ------------------------------------------------------------------
+    # lego4 idx=1 — hips_2leg TOP peg (FIXED) ↦ torso BOTTOM rect-hole (HELD)
+    # ------------------------------------------------------------------
+    # Offline mesh analysis on .obj:
+    #   hips_2leg.obj — TOP block above the hips body. Top face at
+    #     fixed_local y=+0.0853; block extends down to y≈+0.054. The
+    #     block xz-centroid ≈ (0, +0.0035). Peg outward = +y (sticks up).
+    #     We push GREEN -y into the block so it sits inside, like lego2.
+    #   torso.obj — bottom rectangular cavity opening at held_local y=0.
+    #     Rect bounds x∈[-0.0645,+0.0663], z∈[-0.0307,+0.0320]. Geometric
+    #     CENTER of the rectangle ≈ (+0.0009, 0, +0.00065).
+    L4_1_PEG_LOCAL          = (0.0, +0.0700, +0.0035)      # hips_2leg top peg CENTER, pushed -y (deeper into body) (fixed_local)
+    L4_1_PEG_SCALE          = (1.0, 1.0, 1.0)
+    L4_1_HOLE_LOCAL         = (+0.0009, 0.0, +0.00065)     # torso bottom rect-hole CENTER (held_local)
+    L4_1_HOLE_SCALE         = (1.0, 1.0, 1.0)
+    # Direction the TORSO (held) must travel during insertion, in fixed_local.
+    # Peg points +y on hips → torso descends (-y) to engulf the peg.
+    L4_1_INSERT_AXIS_LOCAL  = (0.0, -1.0, 0.0)
+
+    def _visualize_peg_and_hole_l4_1(self):
+        """Draw GREEN = hips_2leg TOP peg CENTER (on FIXED),
+                RED   = torso BOTTOM rect-hole CENTER (on HELD),
+                YELLOW line = current error."""
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        if not getattr(self, "_l4_1_legend_printed", False):
+            print("\n[lego4 idx=1] viewer legend (peg-into-rect-hole):")
+            print(f"  GREEN dot = hips peg CENTER     fixed_local {self.L4_1_PEG_LOCAL}  × {self.L4_1_PEG_SCALE}")
+            print(f"  RED   dot = torso hole CENTER   held_local  {self.L4_1_HOLE_LOCAL} × {self.L4_1_HOLE_SCALE}")
+            self._l4_1_legend_printed = True
+
+        peg_local = torch.tensor(
+            [self.L4_1_PEG_LOCAL[0] * self.L4_1_PEG_SCALE[0],
+             self.L4_1_PEG_LOCAL[1] * self.L4_1_PEG_SCALE[1],
+             self.L4_1_PEG_LOCAL[2] * self.L4_1_PEG_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, peg_local
+        )
+        hole_local = torch.tensor(
+            [self.L4_1_HOLE_LOCAL[0] * self.L4_1_HOLE_SCALE[0],
+             self.L4_1_HOLE_LOCAL[1] * self.L4_1_HOLE_SCALE[1],
+             self.L4_1_HOLE_LOCAL[2] * self.L4_1_HOLE_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, hole_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, hole_local
+        )
+
+        env_origin = self.scene.env_origins[0]
+
+        def _to_tuple(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        g = _to_tuple(peg_world[0])
+        r = _to_tuple(hole_world[0])
+        self._dbg_draw.clear_points()
+        self._dbg_draw.clear_lines()
+        self._dbg_draw.draw_points(
+            [g, r],
+            [(0.0, 1.0, 0.0, 1.0), (1.0, 0.0, 0.0, 1.0)],
+            [22.0, 22.0],
+        )
+        self._dbg_draw.draw_lines([g], [r], [(1.0, 1.0, 0.0, 1.0)], [3.0])
+
+    def _scripted_action_peg_insert_l4_1(self):
+        """lego4 idx=1 — two-phase:
+        Phase 1 (APPROACH): drive RED (torso bottom hole, on HELD) straight
+            to GREEN (hips top peg, on FIXED).
+        Phase 2 (INSERT, latched): once arrived, keep pushing along axis_t."""
+        arrive_tol_l4_1   = 0.005   # 5 mm — switch to insert phase
+        press_depth_l4_1  = 0.10
+        move_scale_l4_1   = 0.3
+
+        peg_local_l4_1 = torch.tensor(
+            [self.L4_1_PEG_LOCAL[0] * self.L4_1_PEG_SCALE[0],
+             self.L4_1_PEG_LOCAL[1] * self.L4_1_PEG_SCALE[1],
+             self.L4_1_PEG_LOCAL[2] * self.L4_1_PEG_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_world_l4_1 = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, peg_local_l4_1
+        )
+        hole_local_l4_1 = torch.tensor(
+            [self.L4_1_HOLE_LOCAL[0] * self.L4_1_HOLE_SCALE[0],
+             self.L4_1_HOLE_LOCAL[1] * self.L4_1_HOLE_SCALE[1],
+             self.L4_1_HOLE_LOCAL[2] * self.L4_1_HOLE_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, hole_world_l4_1 = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, hole_local_l4_1
+        )
+
+        axis_t_local_l4_1 = torch.tensor(
+            list(self.L4_1_INSERT_AXIS_LOCAL),
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t_l4_1 = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world_l4_1 = torch_utils.tf_combine(
+            self.fixed_quat, zero_t_l4_1, self.identity_quat, axis_t_local_l4_1
+        )
+        axis_t_world_l4_1 = axis_t_world_l4_1 / axis_t_world_l4_1.norm(
+            dim=-1, keepdim=True
+        ).clamp(min=1e-8)
+
+        dist_l4_1 = (peg_world_l4_1 - hole_world_l4_1).norm(dim=-1)
+        arrived_now_l4_1 = dist_l4_1 < arrive_tol_l4_1
+        self._press_down_latched_l4_1 = self._press_down_latched_l4_1 | arrived_now_l4_1
+
+        insert_target_l4_1 = peg_world_l4_1 + axis_t_world_l4_1 * press_depth_l4_1
+        target_l4_1 = torch.where(
+            self._press_down_latched_l4_1.unsqueeze(-1),
+            insert_target_l4_1,
+            peg_world_l4_1,
+        )
+
+        delta_l4_1      = target_l4_1 - hole_world_l4_1
+        pos_action_l4_1 = delta_l4_1 / self.pos_threshold
+        pos_action_l4_1 = torch.clamp(pos_action_l4_1, -1.0, 1.0) * move_scale_l4_1
+
+        phase_l4_1 = "INSERT" if bool(self._press_down_latched_l4_1[0]) else "APPROACH"
+        d_l4_1 = (peg_world_l4_1 - hole_world_l4_1)[0]
+        print(
+            f"[l4_1] {phase_l4_1}  "
+            f"dx={float(d_l4_1[0])*1000:+.2f}mm "
+            f"dy={float(d_l4_1[1])*1000:+.2f}mm "
+            f"dz={float(d_l4_1[2])*1000:+.2f}mm "
+            f"dist={float(dist_l4_1[0])*1000:.2f}mm"
+        )
+
+        rot_action_l4_1     = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action_l4_1 = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action_l4_1, rot_action_l4_1, gripper_action_l4_1], dim=-1)
+
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
         self._visualize_markers()
+        if self.cfg_task.task_idx == 1:
+            self._visualize_peg_and_hole_l4_1()
         self._check_attach_condition()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
@@ -435,7 +582,10 @@ class FrankaLego4Env(DirectRLEnv):
         # self.actions = (
         #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
         # )
-        self.actions = action.clone()
+        if self.cfg_task.task_idx == 1:
+            self.actions = self._scripted_action_peg_insert_l4_1()
+        else:
+            self.actions = action.clone()
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
@@ -854,7 +1004,8 @@ class FrankaLego4Env(DirectRLEnv):
             self.fixed_pos_obs_frame[:] = fixed_tip_pos
             rela_trans = fixed_tip_pos.clone()
             rela_trans[:, 2] += self.cfg_task.hand_init_pos[2]
-            rela_trans[:, 2] -= 0.05
+            # Raise initial by an extra 5 cm to avoid spawn collision with the hips top peg.
+            # (Was: `rela_trans[:, 2] -= 0.05`.)
             rela_trans[:, 1] += 0.
             rela_trans[:, 0] -= 0.1
 
@@ -1025,5 +1176,6 @@ class FrankaLego4Env(DirectRLEnv):
 
         # Set initial gains for the episode.
         self._set_gains(self.default_gains)
-        physics_sim_view.set_gravity(carb.Float3(*self.cfg.sim.gravity))
+        # Keep gravity off for the whole episode (was: restore self.cfg.sim.gravity).
+        physics_sim_view.set_gravity(carb.Float3(0.0, 0.0, 0.0))
         self.step_sim_no_action()

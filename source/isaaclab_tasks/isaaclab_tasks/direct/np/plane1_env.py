@@ -148,6 +148,37 @@ class FrankaPlane1Env(DirectRLEnv):
         self.ep_succeeded = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
         self.ep_success_times = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
 
+        # Scripted-policy state machine for idx=1 (wheel ↦ axle):
+        #   A1) xy align — only drive perp-to-axis_t (no descent yet)
+        #   A2) hover    — drive full 3D to 5 cm above peg-tip
+        #   B ) press    — drive down onto the peg
+        self._xy_align_frames_1     = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._xy_aligned_latched_1  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._near_hover_frames_1   = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._press_down_latched_1  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+
+        # Scripted-policy state machine for idx=2 (dowel ↦ wheel hub).
+        # STRICTLY independent of idx=1 — uses _2 suffix everywhere.
+        self._xy_align_frames_2     = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._xy_aligned_latched_2  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._near_hover_frames_2   = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._press_down_latched_2  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+
+        # Scripted-policy state machine for idx=3 (wheel2 ↦ wheel_axis_half).
+        # STRICTLY independent of idx=1/idx=2 — uses _3 suffix everywhere.
+        self._xy_align_frames_3     = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._xy_aligned_latched_3  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._near_hover_frames_3   = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._press_down_latched_3  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+
+        # Scripted-policy state machine for idx=4 (dowel ↦ wheel hub on
+        # wheel_axis_half). STRICTLY independent of every other idx —
+        # uses _4 suffix everywhere.
+        self._xy_align_frames_4     = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._xy_aligned_latched_4  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._near_hover_frames_4   = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._press_down_latched_4  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+
     def _get_keypoint_offsets(self, num_keypoints):
         """Get uniformly-spaced keypoints along a line of unit length, centered at 0."""
         keypoint_offsets = torch.zeros((num_keypoints, 3), device=self.device)
@@ -433,9 +464,977 @@ class FrankaPlane1Env(DirectRLEnv):
         indices = torch.zeros_like(all_envs)
         self.visualization_markers.visualize(loc, rots, marker_indices=indices)
 
+    def _visualize_wheel_and_peg(self):
+        """For task_idx=1: draw two diagnostic dots from OFFLINE mesh
+        analysis of wheel.obj and wheel_axis.obj.
+
+        Pattern (matches vasskar1 idx=1 style):
+          1. OFFLINE (once, in a script): read wheel.obj / wheel_axis.obj,
+             find:
+               - wheel.obj bbox center (unscaled, wheel_local frame)
+                 = (0.1231, 0.0733, 0.0544)         # 4288-vert disk;
+                 narrowest dim is x → rotation axis = wheel +x
+               - wheel_axis.obj +x-end peg-tip cluster centroid (74 verts)
+                 (unscaled, axis_local frame)
+                 = (0.1240, 0.0733, 0.0541)         # tip of the axle
+                 pin where the wheel slides on
+             yz matches between the two = they are designed to mate.
+          2. RUNTIME (every frame): apply USD scale (wheel = 1.8, axle = 2.0)
+             then transform via the LIVE rigid-body root pose:
+                world = held_pos  + R(held_quat ) @ wheel_center_scaled
+                world = fixed_pos + R(fixed_quat) @ peg_tip_scaled
+             Pure tensor math, GPU-friendly.
+
+          GREEN dot = wheel CENTER in world
+          RED   dot = axle PEG-TIP vertex in world
+        These two should coincide when the wheel hub is fully seated on
+        the axle pin.
+        """
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        if not getattr(self, "_plane1_legend_printed", False):
+            print("\n[plane1 idx=1] viewer legend (offline mesh-derived):")
+            print("  GREEN dot = wheel CENTER     wheel_local  (0.1231, 0.0733, 0.0544) × 1.8")
+            print("  RED   dot = axle PEG-TIP     axis_local   (0.1240, 0.0733, 0.0541) × 2.0")
+            self._plane1_legend_printed = True
+
+        # ============================================================
+        # Hardcoded local coordinates from offline OBJ analysis.
+        # Update these constants if the mesh / scale changes.
+        # ============================================================
+        wheel_center_unscaled = [0.1231, 0.0733, 0.0544]
+        peg_tip_unscaled      = [0.1240, 0.0733, 0.0541]
+
+        # USD scale per cfg (must match plane_tasks_cfg.py):
+        #   wheel        scale = [1.8, 1.8, 1.8]
+        #   fixed_asset  scale = [2.0, 2.0, 2.0]
+        wheel_scale = 1.8
+        axle_scale  = 2.0
+
+        # ---- Wheel center in world ----
+        wheel_center_local = torch.tensor(
+            [c * wheel_scale for c in wheel_center_unscaled],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, wheel_center_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, wheel_center_local
+        )
+
+        # ---- Peg tip (axle +x end) in world ----
+        peg_tip_local = torch.tensor(
+            [c * axle_scale for c in peg_tip_unscaled],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_tip_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, peg_tip_local
+        )
+
+        env_origin = self.scene.env_origins[0]
+
+        def to_tuple(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        points = [
+            to_tuple(wheel_center_world[0]),
+            to_tuple(peg_tip_world[0]),
+        ]
+        colors = [
+            (0.2, 1.0, 0.2, 1.0),   # GREEN — wheel center
+            (1.0, 0.2, 0.2, 1.0),   # RED   — axle peg tip
+        ]
+        sizes = [14.0, 14.0]
+
+        self._dbg_draw.clear_points()
+        self._dbg_draw.draw_points(points, colors, sizes)
+
+    def _visualize_wheel_and_peg_idx3(self):
+        """For task_idx=3: draw the two diagnostic dots specific to idx=3.
+
+        Geometry (offline OBJ analysis — DUPLICATED rather than shared
+        with idx=1 by user request "even if it's repeated, rewrite it"):
+
+          GREEN = wheel CENTER  (wheel_local, unscaled) (0.1231, 0.0733, 0.0544) × 1.8
+                  transformed by `self._held_asset` (= _wheel2 for idx=3).
+
+          RED   = axle PEG-TIP  (wheel_axis_half_local, unscaled)
+                  (0.1240, 0.0733, 0.0541) × 2.0
+                  transformed by `self.fixed_quat / self.fixed_pos`.
+
+        IMPORTANT: idx=3 uses `wheel_axis_half1.usd` (NOT `wheel_axis1.usd`
+        like idx=1), but the +x-end peg-tip cluster on the half axle
+        coincides with the full axle's peg-tip in mesh local coords —
+        we re-derived it independently rather than borrowing idx=1's
+        constants, to keep the policies decoupled.
+        """
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        if not getattr(self, "_plane3_legend_printed", False):
+            print("\n[plane1 idx=3] viewer legend (offline mesh-derived, independent of idx=1):")
+            print("  GREEN dot = wheel CENTER       wheel_local (0.1231, 0.0733, 0.0544) × 1.8")
+            print("  RED   dot = axle PEG-TIP       wheel_axis_half_local (0.1240, 0.0733, 0.0541) × 2.0")
+            self._plane3_legend_printed = True
+
+        # ---- Constants (idx=3-specific copy) ----
+        wheel_center_unscaled_3 = [0.1231, 0.0733, 0.0544]
+        peg_tip_unscaled_3      = [0.1240, 0.0733, 0.0541]
+        wheel_scale_3 = 1.8
+        axle_scale_3  = 2.0
+
+        # ---- Wheel center in world ----
+        wheel_center_local_3 = torch.tensor(
+            [c * wheel_scale_3 for c in wheel_center_unscaled_3],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, wheel_center_world_3 = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, wheel_center_local_3
+        )
+
+        # ---- Peg tip in world (wheel_axis_half) ----
+        peg_tip_local_3 = torch.tensor(
+            [c * axle_scale_3 for c in peg_tip_unscaled_3],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_tip_world_3 = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, peg_tip_local_3
+        )
+
+        env_origin = self.scene.env_origins[0]
+
+        def to_tuple_3(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        points = [
+            to_tuple_3(wheel_center_world_3[0]),
+            to_tuple_3(peg_tip_world_3[0]),
+        ]
+        colors = [
+            (0.2, 1.0, 0.2, 1.0),   # GREEN — wheel center
+            (1.0, 0.2, 0.2, 1.0),   # RED   — axle peg tip
+        ]
+        sizes = [14.0, 14.0]
+
+        self._dbg_draw.clear_points()
+        self._dbg_draw.draw_points(points, colors, sizes)
+
+    def _scripted_action_wheel_insert_idx3(self):
+        """idx=3 policy — STRICTLY independent of idx=1/idx=2 (no shared
+        state, no shared function). Drive wheel CENTER (GREEN) toward
+        axle PEG-TIP (RED) on wheel_axis_half: hover at +axis_t * 5 cm
+        from peg, then press deep.
+
+        Logic is the SAME shape as idx=1 (3-phase latch), but written
+        from scratch with its own constants, axis_t reading, and _3-
+        suffixed state tensors. The cfg points to `connection_cfg3_fix`
+        whose axis_t = (0, 0, 1) in fixed_local — different from
+        idx=1's (1, 0, 0) — so the hover and press directions in WORLD
+        end up rotated relative to idx=1.
+
+        Geometry (offline-derived, matches `_visualize_wheel_and_peg_idx3`):
+          - wheel center (wheel_local,            unscaled) (0.1231, 0.0733, 0.0544) × 1.8
+          - peg tip      (wheel_axis_half_local,  unscaled) (0.1240, 0.0733, 0.0541) × 2.0
+        """
+        # ---- Per-idx state tensors (all _3 suffix; no overlap with _1/_2) ----
+        xy_align_frames_3    = self._xy_align_frames_3
+        xy_aligned_latched_3 = self._xy_aligned_latched_3
+        near_hover_frames_3  = self._near_hover_frames_3
+        press_down_latched_3 = self._press_down_latched_3
+
+        # ---- Offline-mesh local coordinates (idx=3 copy) ----
+        wheel_center_unscaled_3 = [0.1231, 0.0733, 0.0544]
+        peg_tip_unscaled_3      = [0.1240, 0.0733, 0.0541]
+        wheel_scale_3 = 1.8
+        axle_scale_3  = 2.0
+
+        # ---- Tunables (idx=3 copy) ----
+        hover_offset_m_3   = 0.05    # 5 cm hover offset along axis_t
+        align_perp_tol_3   = 0.003   # 3 mm perp-to-axis_t residual
+        along_tol_3        = 0.01    # 10 mm along-axis_t residual to latch press
+        dwell_xy_align_3   = 5
+        dwell_to_press_3   = 5
+        press_down_depth_3 = 0.20    # 20 cm deep — mindless press
+        descent_scale_3    = 0.3
+
+        # ---- Wheel center in world (GREEN drive point) ----
+        wheel_center_local_3 = torch.tensor(
+            [c * wheel_scale_3 for c in wheel_center_unscaled_3],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, wheel_center_world_3 = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, wheel_center_local_3
+        )
+
+        # ---- Peg tip in world (RED target reference) ----
+        peg_tip_local_3 = torch.tensor(
+            [c * axle_scale_3 for c in peg_tip_unscaled_3],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_tip_world_3 = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, peg_tip_local_3
+        )
+
+        # ---- Insertion axis in world (from connection_cfg3_fix.axis_t) ----
+        axis_t_local_3 = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t_3 = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world_3 = torch_utils.tf_combine(
+            self.fixed_quat, zero_t_3, self.identity_quat, axis_t_local_3
+        )
+
+        # ---- Targets ----
+        above_target_3      = peg_tip_world_3 + axis_t_world_3 * hover_offset_m_3
+        press_down_target_3 = peg_tip_world_3 - axis_t_world_3 * press_down_depth_3
+
+        # ---- Decompose (GREEN - peg_tip) into perp + along axis_t ----
+        delta_wp_3        = wheel_center_world_3 - peg_tip_world_3
+        along_wp_signed_3 = (delta_wp_3 * axis_t_world_3).sum(-1, keepdim=True)
+        perp_wp_3         = delta_wp_3 - along_wp_signed_3 * axis_t_world_3
+        wheel_to_peg_perp_3 = torch.norm(perp_wp_3, dim=-1)
+
+        # ---- Phase A1 → A2: xy alignment latch ----
+        xy_aligned_3 = wheel_to_peg_perp_3 < align_perp_tol_3
+        xy_align_frames_3 = torch.where(
+            xy_aligned_3,
+            xy_align_frames_3 + 1,
+            torch.zeros_like(xy_align_frames_3),
+        )
+        xy_aligned_latched_3 = xy_aligned_latched_3 | (
+            xy_align_frames_3 >= dwell_xy_align_3
+        )
+
+        # ---- Phase A2 → B: hover latch ----
+        d_above_3     = wheel_center_world_3 - above_target_3
+        along_above_3 = torch.abs((d_above_3 * axis_t_world_3).sum(-1))
+        near_hover_3  = (
+            xy_aligned_latched_3
+            & (wheel_to_peg_perp_3 < align_perp_tol_3)
+            & (along_above_3 < along_tol_3)
+        )
+        near_hover_frames_3 = torch.where(
+            near_hover_3,
+            near_hover_frames_3 + 1,
+            torch.zeros_like(near_hover_frames_3),
+        )
+        press_down_latched_3 = press_down_latched_3 | (
+            near_hover_frames_3 >= dwell_to_press_3
+        )
+
+        # ---- Write per-idx state back (all _3 suffix) ----
+        self._xy_align_frames_3    = xy_align_frames_3
+        self._xy_aligned_latched_3 = xy_aligned_latched_3
+        self._near_hover_frames_3  = near_hover_frames_3
+        self._press_down_latched_3 = press_down_latched_3
+
+        # ---- Per-phase target ----
+        in_phase_A1_3 = ~xy_aligned_latched_3
+        in_phase_A2_3 = xy_aligned_latched_3 & (~press_down_latched_3)
+        in_phase_B_3  = press_down_latched_3
+
+        target_3 = torch.where(
+            in_phase_B_3.unsqueeze(-1),
+            press_down_target_3,
+            above_target_3,
+        )
+
+        # ---- Drive wheel_center → target via fingertip action ----
+        delta_3      = target_3 - wheel_center_world_3
+        pos_action_3 = delta_3 / self.pos_threshold
+        pos_action_3 = torch.clamp(pos_action_3, -1.0, 1.0)
+
+        # Phase A1: zero along-axis component (xy-only, no descent yet).
+        pa_along_signed_3 = (pos_action_3 * axis_t_world_3).sum(-1, keepdim=True)
+        pa_perp_3 = pos_action_3 - pa_along_signed_3 * axis_t_world_3
+        pos_action_3 = torch.where(
+            in_phase_A1_3.unsqueeze(-1), pa_perp_3, pos_action_3
+        )
+
+        scale_3 = torch.where(
+            in_phase_B_3.unsqueeze(-1),
+            torch.ones_like(pos_action_3),
+            torch.full_like(pos_action_3, descent_scale_3),
+        )
+        pos_action_3 = pos_action_3 * scale_3
+
+        if self.joint_created:
+            pos_action_3 = torch.zeros_like(pos_action_3)
+
+        # ---- Every-frame diagnostic print ----
+        peg = peg_tip_world_3[0].tolist()
+        gtg = wheel_center_world_3[0].tolist()
+        tgt = target_3[0].tolist()
+        phase = "A1-xy" if bool(in_phase_A1_3[0]) else (
+            "A2-hover" if bool(in_phase_A2_3[0]) else "B-press"
+        )
+        print(
+            f"[plane3 {phase}] "
+            f"green=({gtg[0]:+.4f},{gtg[1]:+.4f},{gtg[2]:+.4f})  "
+            f"red=({peg[0]:+.4f},{peg[1]:+.4f},{peg[2]:+.4f})  "
+            f"target=({tgt[0]:+.4f},{tgt[1]:+.4f},{tgt[2]:+.4f})  "
+            f"perp={wheel_to_peg_perp_3[0]*1000:.2f}mm "
+            f"along_hover={along_above_3[0]*1000:.2f}mm  "
+            f"xy_latch={int(xy_aligned_latched_3[0])} "
+            f"press_latch={int(press_down_latched_3[0])}"
+        )
+
+        rot_action_3     = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action_3 = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action_3, rot_action_3, gripper_action_3], dim=-1)
+
+    def _visualize_dowel_and_wheel(self):
+        """For task_idx=2: draw two diagnostic dots —
+
+          GREEN = peg BOTTOM POINT (dowel −x end / insertion tip)
+                  dowel_local (unscaled) = (0.1558, 0.0734, 0.0547)
+                  × wheel_dowel scale (1.2, 1.0, 1.0)
+                  = (0.187, 0.073, 0.055), transformed by held_pos/quat
+                  (`self._held_asset` = wheel_dowel1).
+
+          RED   = WHEEL CENTER (the already-assembled wheel from idx=1)
+                  wheel_local (unscaled) = (0.1231, 0.0733, 0.0544) × 1.8,
+                  transformed by `_wheel1` rigid-body pose.
+
+        These two dots show "where the peg is" vs "where it should drop"
+        — the policy will drive GREEN to hover 5 cm above RED then push
+        the dowel down into the wheel hub.
+        """
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        if not getattr(self, "_plane2_legend_printed", False):
+            print("\n[plane1 idx=2] viewer legend (offline mesh-derived):")
+            print("  GREEN dot = peg bottom (dowel −x end)  dowel_local (0.1558, 0.0734, 0.0547) × (1.2,1,1)")
+            print("  RED   dot = wheel center               wheel_local (0.1231, 0.0733, 0.0544) × 1.8")
+            self._plane2_legend_printed = True
+
+        # ---- Peg bottom (dowel −x end) in world ----
+        dowel_tip_unscaled = [0.1558, 0.0734, 0.0547]
+        dowel_scale        = (1.2, 1.0, 1.0)
+        dowel_tip_local = torch.tensor(
+            [dowel_tip_unscaled[i] * dowel_scale[i] for i in range(3)],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_tip_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, dowel_tip_local
+        )
+
+        # ---- Wheel center in world (use _wheel1 rigid-body pose) ----
+        wheel_center_unscaled = [0.1231, 0.0733, 0.0544]
+        wheel_scale           = 1.8
+        wheel_center_local = torch.tensor(
+            [c * wheel_scale for c in wheel_center_unscaled],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        wheel_pos_w  = self._wheel1.data.root_pos_w - self.scene.env_origins
+        wheel_quat_w = self._wheel1.data.root_quat_w
+        _, wheel_center_world = torch_utils.tf_combine(
+            wheel_quat_w, wheel_pos_w, self.identity_quat, wheel_center_local
+        )
+
+        env_origin = self.scene.env_origins[0]
+
+        def to_tuple(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        points = [
+            to_tuple(peg_tip_world[0]),
+            to_tuple(wheel_center_world[0]),
+        ]
+        colors = [
+            (0.2, 1.0, 0.2, 1.0),   # GREEN — peg bottom (dowel tip)
+            (1.0, 0.2, 0.2, 1.0),   # RED   — wheel center
+        ]
+        sizes = [14.0, 14.0]
+
+        self._dbg_draw.clear_points()
+        self._dbg_draw.draw_points(points, colors, sizes)
+
+    def _scripted_action_dowel_insert(self):
+        """idx=2 policy — STRICTLY independent of idx=1 (no shared state
+        / no shared function). Drive dowel BOTTOM (GREEN) toward
+        wheel CENTER (RED): hover 5 cm above wheel center, then push
+        the dowel down into the wheel hub.
+
+        Geometry (offline-derived, matches `_visualize_dowel_and_wheel`):
+          - dowel −x tip (dowel_local, unscaled): (0.1558, 0.0734, 0.0547)
+                × wheel_dowel scale (1.2, 1.0, 1.0)
+          - wheel center (wheel_local, unscaled): (0.1231, 0.0733, 0.0544) × 1.8
+
+        3-phase latched policy (`_2` state suffix):
+          A1) xy align — only perp-to-axis_t drive (no descent)
+          A2) hover    — drive 3D to 5 cm above wheel center
+          B ) press    — drive deep into wheel hub
+        """
+        # ---- Per-idx state tensors (all _2 suffix, no overlap with _1) ----
+        xy_align_frames    = self._xy_align_frames_2
+        xy_aligned_latched = self._xy_aligned_latched_2
+        near_hover_frames  = self._near_hover_frames_2
+        press_down_latched = self._press_down_latched_2
+
+        # ---- Geometry constants (offline) ----
+        dowel_tip_unscaled    = [0.1558, 0.0734, 0.0547]
+        dowel_scale           = (1.2, 1.0, 1.0)
+        wheel_center_unscaled = [0.1231, 0.0733, 0.0544]
+        wheel_scale           = 1.8
+
+        # ---- Tunables ----
+        hover_offset_m   = 0.05    # 5 cm above wheel center
+        align_perp_tol   = 0.003   # 3 mm perp-to-axis_t residual
+        along_tol        = 0.01    # 10 mm along-axis_t residual to latch press
+        dwell_xy_align   = 5
+        dwell_to_press   = 5
+        press_down_depth = 0.20    # 20 cm deep — mindless press
+        descent_scale    = 0.3
+
+        # ---- Dowel tip in world (GREEN drive point) ----
+        dowel_tip_local = torch.tensor(
+            [dowel_tip_unscaled[i] * dowel_scale[i] for i in range(3)],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_tip_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, dowel_tip_local
+        )
+
+        # ---- Wheel center in world (RED target reference) ----
+        wheel_center_local = torch.tensor(
+            [c * wheel_scale for c in wheel_center_unscaled],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        wheel_pos_w  = self._wheel1.data.root_pos_w - self.scene.env_origins
+        wheel_quat_w = self._wheel1.data.root_quat_w
+        _, wheel_center_world = torch_utils.tf_combine(
+            wheel_quat_w, wheel_pos_w, self.identity_quat, wheel_center_local
+        )
+
+        # ---- Insertion axis in world ----
+        axis_t_local_3 = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, axis_t_local_3
+        )
+
+        # ---- Targets ----
+        above_target      = wheel_center_world + axis_t_world * hover_offset_m
+        press_down_target = wheel_center_world - axis_t_world * press_down_depth
+
+        # ---- Decompose (GREEN - wheel_center) into perp + along axis_t ----
+        delta_pw         = peg_tip_world - wheel_center_world
+        along_pw_signed  = (delta_pw * axis_t_world).sum(-1, keepdim=True)
+        perp_pw          = delta_pw - along_pw_signed * axis_t_world
+        peg_to_wheel_perp = torch.norm(perp_pw, dim=-1)
+
+        # ---- Phase A1 → A2: xy alignment latch ----
+        xy_aligned = peg_to_wheel_perp < align_perp_tol
+        xy_align_frames = torch.where(
+            xy_aligned,
+            xy_align_frames + 1,
+            torch.zeros_like(xy_align_frames),
+        )
+        xy_aligned_latched = xy_aligned_latched | (xy_align_frames >= dwell_xy_align)
+
+        # ---- Phase A2 → B: hover latch ----
+        d_above     = peg_tip_world - above_target
+        along_above = torch.abs((d_above * axis_t_world).sum(-1))
+        near_hover  = (
+            xy_aligned_latched
+            & (peg_to_wheel_perp < align_perp_tol)
+            & (along_above < along_tol)
+        )
+        near_hover_frames = torch.where(
+            near_hover,
+            near_hover_frames + 1,
+            torch.zeros_like(near_hover_frames),
+        )
+        press_down_latched = press_down_latched | (near_hover_frames >= dwell_to_press)
+
+        # ---- Write per-idx state back (all _2 suffix) ----
+        self._xy_align_frames_2    = xy_align_frames
+        self._xy_aligned_latched_2 = xy_aligned_latched
+        self._near_hover_frames_2  = near_hover_frames
+        self._press_down_latched_2 = press_down_latched
+
+        # ---- Per-phase target ----
+        in_phase_A1 = ~xy_aligned_latched
+        in_phase_A2 = xy_aligned_latched & (~press_down_latched)
+        in_phase_B  = press_down_latched
+
+        target = torch.where(
+            in_phase_B.unsqueeze(-1),
+            press_down_target,
+            above_target,
+        )
+
+        # ---- Drive peg_tip → target via fingertip action ----
+        delta      = target - peg_tip_world
+        pos_action = delta / self.pos_threshold
+        pos_action = torch.clamp(pos_action, -1.0, 1.0)
+
+        # Phase A1: zero along-axis component (xy-only, no descent yet).
+        pa_along_signed = (pos_action * axis_t_world).sum(-1, keepdim=True)
+        pa_perp = pos_action - pa_along_signed * axis_t_world
+        pos_action = torch.where(in_phase_A1.unsqueeze(-1), pa_perp, pos_action)
+
+        scale = torch.where(
+            in_phase_B.unsqueeze(-1),
+            torch.ones_like(pos_action),
+            torch.full_like(pos_action, descent_scale),
+        )
+        pos_action = pos_action * scale
+
+        if self.joint_created:
+            pos_action = torch.zeros_like(pos_action)
+
+        # ---- Every-frame diagnostic print ----
+        peg = peg_tip_world[0].tolist()
+        whc = wheel_center_world[0].tolist()
+        tgt = target[0].tolist()
+        phase = "A1-xy" if bool(in_phase_A1[0]) else ("A2-hover" if bool(in_phase_A2[0]) else "B-press")
+        print(
+            f"[plane2 {phase}] "
+            f"green=({peg[0]:+.4f},{peg[1]:+.4f},{peg[2]:+.4f})  "
+            f"red=({whc[0]:+.4f},{whc[1]:+.4f},{whc[2]:+.4f})  "
+            f"target=({tgt[0]:+.4f},{tgt[1]:+.4f},{tgt[2]:+.4f})  "
+            f"perp={peg_to_wheel_perp[0]*1000:.2f}mm "
+            f"along_hover={along_above[0]*1000:.2f}mm  "
+            f"xy_latch={int(xy_aligned_latched[0])} "
+            f"press_latch={int(press_down_latched[0])}"
+        )
+
+        rot_action     = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action, rot_action, gripper_action], dim=-1)
+
+    def _visualize_dowel_and_wheel_idx4(self):
+        """For task_idx=4: draw the two diagnostic dots specific to idx=4.
+
+        Same shape as idx=2's viz (dowel → wheel hub) but written from
+        scratch — no shared helper, no shared constants. The "fixed
+        asset" for idx=4 is wheel_axis_HALF (different from idx=2's
+        wheel_axis), and the wheel referenced as the target is the one
+        attached to the half-axle from the prior step (idx=3).
+
+          GREEN = peg BOTTOM POINT (dowel −x end / insertion tip)
+                  dowel_local (unscaled) = (0.1558, 0.0734, 0.0547)
+                  × wheel_dowel scale (1.2, 1.0, 1.0)
+                  transformed by `self._held_asset` (= _wheel_dowel1).
+
+          RED   = WHEEL CENTER (the wheel attached to the half-axle)
+                  wheel_local (unscaled) = (0.1231, 0.0733, 0.0544) × 1.8,
+                  transformed by `_wheel1` rigid-body pose.
+        """
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        if not getattr(self, "_plane4_legend_printed", False):
+            print("\n[plane1 idx=4] viewer legend (offline mesh-derived, independent of idx=2):")
+            print("  GREEN dot = peg bottom (dowel −x end)  dowel_local (0.1558, 0.0734, 0.0547) × (1.2,1,1)")
+            print("  RED   dot = wheel center               wheel_local (0.1231, 0.0733, 0.0544) × 1.8")
+            self._plane4_legend_printed = True
+
+        # ---- Constants (idx=4 copy) ----
+        dowel_tip_unscaled_4    = [0.1558, 0.0734, 0.0547]
+        dowel_scale_4           = (1.2, 1.0, 1.0)
+        wheel_center_unscaled_4 = [0.1231, 0.0733, 0.0544]
+        wheel_scale_4           = 1.8
+
+        # ---- Peg bottom (dowel −x end) in world ----
+        dowel_tip_local_4 = torch.tensor(
+            [dowel_tip_unscaled_4[i] * dowel_scale_4[i] for i in range(3)],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_tip_world_4 = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, dowel_tip_local_4
+        )
+
+        # ---- Wheel center in world (use _wheel1 rigid-body pose) ----
+        wheel_center_local_4 = torch.tensor(
+            [c * wheel_scale_4 for c in wheel_center_unscaled_4],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        wheel_pos_w_4  = self._wheel1.data.root_pos_w - self.scene.env_origins
+        wheel_quat_w_4 = self._wheel1.data.root_quat_w
+        _, wheel_center_world_4 = torch_utils.tf_combine(
+            wheel_quat_w_4, wheel_pos_w_4, self.identity_quat, wheel_center_local_4
+        )
+
+        env_origin = self.scene.env_origins[0]
+
+        def to_tuple_4(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        points = [
+            to_tuple_4(peg_tip_world_4[0]),
+            to_tuple_4(wheel_center_world_4[0]),
+        ]
+        colors = [
+            (0.2, 1.0, 0.2, 1.0),   # GREEN — peg bottom (dowel tip)
+            (1.0, 0.2, 0.2, 1.0),   # RED   — wheel center
+        ]
+        sizes = [14.0, 14.0]
+
+        self._dbg_draw.clear_points()
+        self._dbg_draw.draw_points(points, colors, sizes)
+
+    def _scripted_action_dowel_insert_idx4(self):
+        """idx=4 policy — STRICTLY independent of idx=1/idx=2/idx=3 (no
+        shared state, no shared function). Same shape as idx=2 (3-phase
+        latch) but written from scratch with `_4`-suffixed locals and
+        state tensors. Drives the dowel's BOTTOM tip toward the WHEEL
+        CENTER attached to the half-axle.
+
+        Geometry (offline-derived, matches `_visualize_dowel_and_wheel_idx4`):
+          - dowel −x tip (dowel_local, unscaled): (0.1558, 0.0734, 0.0547)
+                × wheel_dowel scale (1.2, 1.0, 1.0)
+          - wheel center (wheel_local, unscaled): (0.1231, 0.0733, 0.0544) × 1.8
+
+        3-phase latched policy (`_4` state suffix):
+          A1) xy align — only perp-to-axis_t drive (no descent)
+          A2) hover    — drive 3D to 5 cm above wheel center
+          B ) press    — drive deep into wheel hub
+        """
+        # ---- Per-idx state tensors (all _4 suffix; no overlap with others) ----
+        xy_align_frames_4    = self._xy_align_frames_4
+        xy_aligned_latched_4 = self._xy_aligned_latched_4
+        near_hover_frames_4  = self._near_hover_frames_4
+        press_down_latched_4 = self._press_down_latched_4
+
+        # ---- Geometry constants (idx=4 copy, offline) ----
+        dowel_tip_unscaled_4    = [0.1558, 0.0734, 0.0547]
+        dowel_scale_4           = (1.2, 1.0, 1.0)
+        wheel_center_unscaled_4 = [0.1231, 0.0733, 0.0544]
+        wheel_scale_4           = 1.8
+
+        # ---- Tunables (idx=4 copy) ----
+        hover_offset_m_4   = 0.05    # 5 cm above wheel center
+        align_perp_tol_4   = 0.003   # 3 mm perp-to-axis_t residual
+        along_tol_4        = 0.01    # 10 mm along-axis_t residual to latch press
+        dwell_xy_align_4   = 5
+        dwell_to_press_4   = 5
+        press_down_depth_4 = 0.20    # 20 cm deep — mindless press
+        descent_scale_4    = 0.3
+
+        # ---- Dowel tip in world (GREEN drive point) ----
+        dowel_tip_local_4 = torch.tensor(
+            [dowel_tip_unscaled_4[i] * dowel_scale_4[i] for i in range(3)],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_tip_world_4 = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, dowel_tip_local_4
+        )
+
+        # ---- Wheel center in world (RED target reference, _wheel1 pose) ----
+        wheel_center_local_4 = torch.tensor(
+            [c * wheel_scale_4 for c in wheel_center_unscaled_4],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        wheel_pos_w_4  = self._wheel1.data.root_pos_w - self.scene.env_origins
+        wheel_quat_w_4 = self._wheel1.data.root_quat_w
+        _, wheel_center_world_4 = torch_utils.tf_combine(
+            wheel_quat_w_4, wheel_pos_w_4, self.identity_quat, wheel_center_local_4
+        )
+
+        # ---- Insertion axis in world (from connection_cfg1.axis_t) ----
+        axis_t_local_4 = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t_4 = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world_4 = torch_utils.tf_combine(
+            self.fixed_quat, zero_t_4, self.identity_quat, axis_t_local_4
+        )
+
+        # ---- Targets ----
+        above_target_4      = wheel_center_world_4 + axis_t_world_4 * hover_offset_m_4
+        press_down_target_4 = wheel_center_world_4 - axis_t_world_4 * press_down_depth_4
+
+        # ---- Decompose (GREEN - wheel_center) into perp + along axis_t ----
+        delta_pw_4         = peg_tip_world_4 - wheel_center_world_4
+        along_pw_signed_4  = (delta_pw_4 * axis_t_world_4).sum(-1, keepdim=True)
+        perp_pw_4          = delta_pw_4 - along_pw_signed_4 * axis_t_world_4
+        peg_to_wheel_perp_4 = torch.norm(perp_pw_4, dim=-1)
+
+        # ---- Phase A1 → A2: xy alignment latch ----
+        xy_aligned_4 = peg_to_wheel_perp_4 < align_perp_tol_4
+        xy_align_frames_4 = torch.where(
+            xy_aligned_4,
+            xy_align_frames_4 + 1,
+            torch.zeros_like(xy_align_frames_4),
+        )
+        xy_aligned_latched_4 = xy_aligned_latched_4 | (
+            xy_align_frames_4 >= dwell_xy_align_4
+        )
+
+        # ---- Phase A2 → B: hover latch ----
+        d_above_4     = peg_tip_world_4 - above_target_4
+        along_above_4 = torch.abs((d_above_4 * axis_t_world_4).sum(-1))
+        near_hover_4  = (
+            xy_aligned_latched_4
+            & (peg_to_wheel_perp_4 < align_perp_tol_4)
+            & (along_above_4 < along_tol_4)
+        )
+        near_hover_frames_4 = torch.where(
+            near_hover_4,
+            near_hover_frames_4 + 1,
+            torch.zeros_like(near_hover_frames_4),
+        )
+        press_down_latched_4 = press_down_latched_4 | (
+            near_hover_frames_4 >= dwell_to_press_4
+        )
+
+        # ---- Write per-idx state back (all _4 suffix) ----
+        self._xy_align_frames_4    = xy_align_frames_4
+        self._xy_aligned_latched_4 = xy_aligned_latched_4
+        self._near_hover_frames_4  = near_hover_frames_4
+        self._press_down_latched_4 = press_down_latched_4
+
+        # ---- Per-phase target ----
+        in_phase_A1_4 = ~xy_aligned_latched_4
+        in_phase_A2_4 = xy_aligned_latched_4 & (~press_down_latched_4)
+        in_phase_B_4  = press_down_latched_4
+
+        target_4 = torch.where(
+            in_phase_B_4.unsqueeze(-1),
+            press_down_target_4,
+            above_target_4,
+        )
+
+        # ---- Drive peg_tip → target via fingertip action ----
+        delta_4      = target_4 - peg_tip_world_4
+        pos_action_4 = delta_4 / self.pos_threshold
+        pos_action_4 = torch.clamp(pos_action_4, -1.0, 1.0)
+
+        # Phase A1: zero along-axis component (xy-only, no descent yet).
+        pa_along_signed_4 = (pos_action_4 * axis_t_world_4).sum(-1, keepdim=True)
+        pa_perp_4 = pos_action_4 - pa_along_signed_4 * axis_t_world_4
+        pos_action_4 = torch.where(
+            in_phase_A1_4.unsqueeze(-1), pa_perp_4, pos_action_4
+        )
+
+        scale_4 = torch.where(
+            in_phase_B_4.unsqueeze(-1),
+            torch.ones_like(pos_action_4),
+            torch.full_like(pos_action_4, descent_scale_4),
+        )
+        pos_action_4 = pos_action_4 * scale_4
+
+        if self.joint_created:
+            pos_action_4 = torch.zeros_like(pos_action_4)
+
+        # ---- Every-frame diagnostic print ----
+        peg = peg_tip_world_4[0].tolist()
+        whc = wheel_center_world_4[0].tolist()
+        tgt = target_4[0].tolist()
+        phase = "A1-xy" if bool(in_phase_A1_4[0]) else (
+            "A2-hover" if bool(in_phase_A2_4[0]) else "B-press"
+        )
+        print(
+            f"[plane4 {phase}] "
+            f"green=({peg[0]:+.4f},{peg[1]:+.4f},{peg[2]:+.4f})  "
+            f"red=({whc[0]:+.4f},{whc[1]:+.4f},{whc[2]:+.4f})  "
+            f"target=({tgt[0]:+.4f},{tgt[1]:+.4f},{tgt[2]:+.4f})  "
+            f"perp={peg_to_wheel_perp_4[0]*1000:.2f}mm "
+            f"along_hover={along_above_4[0]*1000:.2f}mm  "
+            f"xy_latch={int(xy_aligned_latched_4[0])} "
+            f"press_latch={int(press_down_latched_4[0])}"
+        )
+
+        rot_action_4     = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action_4 = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action_4, rot_action_4, gripper_action_4], dim=-1)
+
+    def _scripted_action_wheel_insert(self):
+        """idx=1 policy — drive wheel CENTER (GREEN) toward axle PEG-TIP (RED).
+
+        Geometry (offline-derived, matches `_visualize_wheel_and_peg`):
+          - wheel center (held_local, unscaled): (0.1231, 0.0733, 0.0544) × 1.8
+          - peg tip      (axis_local, unscaled): (0.1240, 0.0733, 0.0541) × 2.0
+
+        3-phase latched policy (mirrors vasskar2):
+          A1) XY ALIGN (no descent): drive only the perp-to-axis_t
+              component until peg-axis-aligned for `dwell_xy_align` frames.
+          A2) HOVER:    drive full 3D so wheel center sits 5 cm above peg
+              tip (`above_target = peg_tip + axis_t * 0.05`).
+          B ) PRESS:    drive deep along -axis_t into the peg.
+        """
+        # ---- Per-idx state tensors ----
+        xy_align_frames    = self._xy_align_frames_1
+        xy_aligned_latched = self._xy_aligned_latched_1
+        near_hover_frames  = self._near_hover_frames_1
+        press_down_latched = self._press_down_latched_1
+
+        # ---- Offline-mesh local coordinates (must match the viz) ----
+        wheel_center_unscaled = [0.1231, 0.0733, 0.0544]
+        peg_tip_unscaled      = [0.1240, 0.0733, 0.0541]
+        wheel_scale = 1.8
+        axle_scale  = 2.0
+
+        # ---- Tunables ----
+        hover_offset_m   = 0.05    # 5 cm above peg tip — hover height
+        align_perp_tol   = 0.003   # 3 mm perp-to-axis_t residual
+        along_tol        = 0.01    # 10 mm along-axis_t residual to latch press
+        dwell_xy_align   = 5
+        dwell_to_press   = 5
+        press_down_depth = 0.20    # 20 cm deep — mindless press
+        descent_scale    = 0.3
+
+        # ---- Wheel center in world (GREEN) ----
+        wheel_center_local = torch.tensor(
+            [c * wheel_scale for c in wheel_center_unscaled],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, wheel_center_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, wheel_center_local
+        )
+
+        # ---- Peg tip in world (RED) ----
+        peg_tip_local = torch.tensor(
+            [c * axle_scale for c in peg_tip_unscaled],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_tip_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, peg_tip_local
+        )
+
+        # ---- Insertion axis in world ----
+        axis_t_local_3 = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, axis_t_local_3
+        )
+
+        # ---- Targets ----
+        # Hover 5 cm "above" the peg tip = +axis_t * hover_offset_m.
+        # (User said "5 cm above the red point". For plane idx=1 with the
+        # fixed_asset rot (0.707, 0, -0.707, 0), axis_t_world ends up =
+        # world +z, so +axis_t = up in world — consistent with the request.)
+        above_target      = peg_tip_world + axis_t_world * hover_offset_m
+        press_down_target = peg_tip_world - axis_t_world * press_down_depth
+
+        # ---- Decompose (GREEN - peg_tip) into perp + along axis_t ----
+        delta_wp        = wheel_center_world - peg_tip_world
+        along_wp_signed = (delta_wp * axis_t_world).sum(-1, keepdim=True)
+        perp_wp         = delta_wp - along_wp_signed * axis_t_world
+        wheel_to_peg_perp = torch.norm(perp_wp, dim=-1)
+
+        # ---- Phase A1 → A2: xy alignment latch ----
+        xy_aligned = wheel_to_peg_perp < align_perp_tol
+        xy_align_frames = torch.where(
+            xy_aligned,
+            xy_align_frames + 1,
+            torch.zeros_like(xy_align_frames),
+        )
+        xy_aligned_latched = xy_aligned_latched | (xy_align_frames >= dwell_xy_align)
+
+        # ---- Phase A2 → B: hover latch (xy + along both within tol) ----
+        d_above     = wheel_center_world - above_target
+        along_above = torch.abs((d_above * axis_t_world).sum(-1))
+        near_hover  = (
+            xy_aligned_latched
+            & (wheel_to_peg_perp < align_perp_tol)
+            & (along_above < along_tol)
+        )
+        near_hover_frames = torch.where(
+            near_hover,
+            near_hover_frames + 1,
+            torch.zeros_like(near_hover_frames),
+        )
+        press_down_latched = press_down_latched | (near_hover_frames >= dwell_to_press)
+
+        # ---- Write per-idx state back ----
+        self._xy_align_frames_1    = xy_align_frames
+        self._xy_aligned_latched_1 = xy_aligned_latched
+        self._near_hover_frames_1  = near_hover_frames
+        self._press_down_latched_1 = press_down_latched
+
+        # ---- Per-phase target ----
+        in_phase_A1 = ~xy_aligned_latched
+        in_phase_A2 = xy_aligned_latched & (~press_down_latched)
+        in_phase_B  = press_down_latched
+
+        target = torch.where(
+            in_phase_B.unsqueeze(-1),
+            press_down_target,
+            above_target,
+        )
+
+        # ---- Drive wheel_center → target via fingertip action ----
+        delta      = target - wheel_center_world
+        pos_action = delta / self.pos_threshold
+        pos_action = torch.clamp(pos_action, -1.0, 1.0)
+
+        # Phase A1: zero along-axis component (xy-only, no descent yet).
+        pa_along_signed = (pos_action * axis_t_world).sum(-1, keepdim=True)
+        pa_perp = pos_action - pa_along_signed * axis_t_world
+        pos_action = torch.where(in_phase_A1.unsqueeze(-1), pa_perp, pos_action)
+
+        # Scale: A1/A2 slow, B full speed.
+        scale = torch.where(
+            in_phase_B.unsqueeze(-1),
+            torch.ones_like(pos_action),
+            torch.full_like(pos_action, descent_scale),
+        )
+        pos_action = pos_action * scale
+
+        if self.joint_created:
+            pos_action = torch.zeros_like(pos_action)
+
+        # ---- Every-frame diagnostic print ----
+        peg = peg_tip_world[0].tolist()
+        gtg = wheel_center_world[0].tolist()
+        tgt = target[0].tolist()
+        phase = "A1-xy" if bool(in_phase_A1[0]) else ("A2-hover" if bool(in_phase_A2[0]) else "B-press")
+        print(
+            f"[plane1 {phase}] "
+            f"green=({gtg[0]:+.4f},{gtg[1]:+.4f},{gtg[2]:+.4f})  "
+            f"red=({peg[0]:+.4f},{peg[1]:+.4f},{peg[2]:+.4f})  "
+            f"target=({tgt[0]:+.4f},{tgt[1]:+.4f},{tgt[2]:+.4f})  "
+            f"perp={wheel_to_peg_perp[0]*1000:.2f}mm "
+            f"along_hover={along_above[0]*1000:.2f}mm  "
+            f"xy_latch={int(xy_aligned_latched[0])} "
+            f"press_latch={int(press_down_latched[0])}"
+        )
+
+        rot_action     = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action, rot_action, gripper_action], dim=-1)
+
     def _pre_physics_step(self, action):
-        """Apply policy actions with smoothing."""
+        """Apply policy actions with smoothing.
+        Dispatch per task_idx — each idx has STRICTLY independent viz
+        and policy functions (no state or function sharing)."""
         # self._visualize_markers()
+        if self.cfg_task.task_idx == 1:
+            self._visualize_wheel_and_peg()
+        elif self.cfg_task.task_idx == 2:
+            self._visualize_dowel_and_wheel()
+        elif self.cfg_task.task_idx == 3:
+            self._visualize_wheel_and_peg_idx3()
+        elif self.cfg_task.task_idx == 4:
+            self._visualize_dowel_and_wheel_idx4()
         self._check_attach_condition()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
@@ -444,7 +1443,17 @@ class FrankaPlane1Env(DirectRLEnv):
         # self.actions = (
         #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
         # )
-        self.actions = action.clone()
+        # Each idx has its own scripted policy — every idx is now covered.
+        if self.cfg_task.task_idx == 1:
+            self.actions = self._scripted_action_wheel_insert()
+        elif self.cfg_task.task_idx == 2:
+            self.actions = self._scripted_action_dowel_insert()
+        elif self.cfg_task.task_idx == 3:
+            self.actions = self._scripted_action_wheel_insert_idx3()
+        elif self.cfg_task.task_idx == 4:
+            self.actions = self._scripted_action_dowel_insert_idx4()
+        else:
+            self.actions = action.clone()
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
@@ -687,6 +1696,26 @@ class FrankaPlane1Env(DirectRLEnv):
         super()._reset_idx(env_ids)
         print("Resetting envs:", env_ids)
         self._remove_fixed_joint()
+        # Reset scripted-policy state for idx=1.
+        self._xy_align_frames_1.zero_()
+        self._xy_aligned_latched_1.zero_()
+        self._near_hover_frames_1.zero_()
+        self._press_down_latched_1.zero_()
+        # Reset scripted-policy state for idx=2 (independent of idx=1).
+        self._xy_align_frames_2.zero_()
+        self._xy_aligned_latched_2.zero_()
+        self._near_hover_frames_2.zero_()
+        self._press_down_latched_2.zero_()
+        # Reset scripted-policy state for idx=3 (independent of idx=1, idx=2).
+        self._xy_align_frames_3.zero_()
+        self._xy_aligned_latched_3.zero_()
+        self._near_hover_frames_3.zero_()
+        self._press_down_latched_3.zero_()
+        # Reset scripted-policy state for idx=4 (independent of every other idx).
+        self._xy_align_frames_4.zero_()
+        self._xy_aligned_latched_4.zero_()
+        self._near_hover_frames_4.zero_()
+        self._press_down_latched_4.zero_()
         self._set_assets_to_default_pose(env_ids)
         self._set_franka_to_default_pose(joints=self.cfg.ctrl.reset_joints, env_ids=env_ids)
         self.step_sim_no_action()

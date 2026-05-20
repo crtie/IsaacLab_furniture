@@ -695,7 +695,7 @@ class PlaneAssembly3(FactoryTask):
     #! crtie: task_idx can be [1, 2, 3]
 
 
-    task_idx = 3
+    task_idx = 1
 
 
     name = "plane_assembly"

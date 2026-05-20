@@ -79,6 +79,23 @@ class FrankaVasskar1Env(DirectRLEnv):
         self._set_friction(self._fixed_asset, self.cfg_task.fixed_asset_cfg.friction)
         self._set_friction(self._robot, self.cfg_task.robot_cfg.friction)
 
+        # All scene surfaces frictionless for the spiral search to slide
+        # without binding (gripper still holds via robot 5.0 friction).
+        if self.cfg_task.task_idx == 1:
+            self._set_friction(self._fixed_asset, 0.0)
+            self._set_friction(self._held_asset, 0.0)
+        if self.cfg_task.task_idx == 2:
+            self._set_friction(self._fixed_asset, 0.0)
+            self._set_friction(self._held_asset, 0.0)
+        if self.cfg_task.task_idx == 3:
+            # idx=3 contact happens between the held lid's slots and the
+            # top1/top2 leg tops — zero ALL of them so the search/overshoot
+            # phase can slide laterally without binding.
+            self._set_friction(self._fixed_asset, 0.0)
+            self._set_friction(self._held_asset, 0.0)
+            self._set_friction(self._top1, 0.0)
+            self._set_friction(self._top2, 0.0)
+
     def _set_friction(self, asset, value):
         """Update material properties for a given asset."""
         materials = asset.root_physx_view.get_material_properties()
@@ -147,6 +164,35 @@ class FrankaVasskar1Env(DirectRLEnv):
 
         self.ep_succeeded = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
         self.ep_success_times = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+
+        # Scripted-policy state machine (idx=1 top-frame insertion only).
+        self._near_hole_frames = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._search_active_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._search_step = 0
+        self._press_down_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        # Contact detection during deliberate-offset press-down: track peg z and
+        # count frames where descent stalls — once it stalls long enough we
+        # latch _search_active_latched and start sliding back toward the hole.
+        self._prev_peg_z = torch.zeros((self.num_envs,), device=self.device)
+        self._contact_frames = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        # -y overshoot during slide-back: once peg reaches the overshoot
+        # position past the true hole, wait N frames, then switch to a deeper
+        # final press-down target.
+        self._overshoot_reached_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._overshoot_wait_frames = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._final_press_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+
+        # Scripted-policy state machine (idx=2 second top-frame insertion).
+        # Mirrored from idx=1 but kept fully independent — no shared tensors.
+        self._near_hole_frames_2 = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._search_active_latched_2 = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._search_step_2 = 0
+        self._press_down_latched_2 = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._prev_peg_z_2 = torch.zeros((self.num_envs,), device=self.device)
+        self._contact_frames_2 = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._overshoot_reached_latched_2 = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._overshoot_wait_frames_2 = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._final_press_latched_2 = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
 
     def _get_keypoint_offsets(self, num_keypoints):
         """Get uniformly-spaced keypoints along a line of unit length, centered at 0."""
@@ -394,6 +440,14 @@ class FrankaVasskar1Env(DirectRLEnv):
 
 
     def _check_attach_condition(self):
+        # idx=3: skip auto-attach entirely. The cfg target pose snaps the
+        # lid to z=1.172 (world) which is ~12 cm above the leg tops — that
+        # locks the lid floating, not seated. Instead let physics + the
+        # policy's continuous downward force settle the lid naturally on
+        # the legs without ever creating a USD FixedJoint.
+        if self.cfg_task.task_idx == 3:
+            return
+
         rel_mat = self._get_real_mat()
         gt_real_mat = self._connection_cfg.pose_to_base
 
@@ -405,7 +459,7 @@ class FrankaVasskar1Env(DirectRLEnv):
         print("t_tangent:", t_tangent)
         print("t_normal:", t_normal)
         # print("joint names of frame:",self._fixed_asset.joint_names)
-        if not self.joint_created and R_dist < 0.1 and t_tangent < 0.005 and t_normal < 0.008:
+        if not self.joint_created and R_dist < 0.1 and t_tangent < 0.005 and t_normal < 0.002:
             if self.cfg_task.task_idx == 3:
                 self._create_fixed_joint(connection_idx=self.cfg_task.task_idx)
             # self._create_screw_joint(connection_idx=self.cfg_task.task_idx)
@@ -432,6 +486,749 @@ class FrankaVasskar1Env(DirectRLEnv):
         indices = torch.zeros_like(all_envs)
         self.visualization_markers.visualize(loc, rots, marker_indices=indices)
 
+    def _visualize_candidates(
+        self,
+        all_holes_world,      # list of 4 tensors (1 per hole), each (num_envs, 3)
+        all_pegs_world,       # list of 4 tensors (1 per top corner / peg candidate)
+        chosen_pegs_world,    # list of 2 tensors — currently selected pegs
+        chosen_holes_world,   # list of 2 tensors — currently selected holes
+        peg_mid_world,
+        target_mid_world,
+        all_slots_world=None, # optional 3rd group (e.g. held-asset slots for idx=3)
+    ):
+        """Render every candidate hole/peg labeled by a vertical stack of
+        small "tick" dots above its main marker. Plus the currently chosen
+        2 pegs / 2 holes drawn larger for visibility. Console legend printed
+        once at first call.
+
+        Labels (per main marker, stacked vertically above by 0.025+0.012*j):
+          1 tick  = #0     2 ticks = #1     3 ticks = #2     4 ticks = #3
+        """
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        if not getattr(self, "_legend_printed", False):
+            print("\n[vasskar1] viewer legend (each label = N ticks stacked above main dot)")
+            print("  Base holes — frame local coords:")
+            print("    #0 (1 tick)  RED     at (0.010, 0.040, 0.000)")
+            print("    #1 (2 ticks) ORANGE  at (0.010, 0.220, 0.000)")
+            print("    #2 (3 ticks) YELLOW  at (0.290, 0.040, 0.000)")
+            print("    #3 (4 ticks) PINK    at (0.290, 0.220, 0.000)")
+            print("  Top1 corners — corner-cluster 3D centroids (unscaled):")
+            print("    A (1 tick)  MAGENTA at (0.0025, 0.010, -0.010)")
+            print("    B (2 ticks) CYAN    at (0.5625, 0.010, -0.010)")
+            print("    C (3 ticks) LIME    at (0.0025, 0.290, -0.010)")
+            print("    D (4 ticks) PURPLE  at (0.5625, 0.290, -0.010)")
+            print("  CURRENTLY CHOSEN: large RED = active pegs, large GREEN = active holes")
+            self._legend_printed = True
+
+        self._dbg_draw.clear_points()
+        self._dbg_draw.clear_lines()
+
+        env_origin = self.scene.env_origins[0]
+
+        def to_tuple(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        points, colors, sizes = [], [], []
+
+        # ---- chosen pegs (large red) + chosen holes (large green) ----
+        for p in chosen_pegs_world:
+            points.append(to_tuple(p[0]))
+            colors.append((1.0, 0.0, 0.0, 1.0))
+            sizes.append(24.0)
+        for h in chosen_holes_world:
+            points.append(to_tuple(h[0]))
+            colors.append((0.0, 1.0, 0.0, 1.0))
+            sizes.append(24.0)
+        # mid points
+        points.append(to_tuple(peg_mid_world[0]))
+        colors.append((1.0, 0.5, 0.0, 1.0))
+        sizes.append(14.0)
+        points.append(to_tuple(target_mid_world[0]))
+        colors.append((0.0, 1.0, 1.0, 1.0))
+        sizes.append(14.0)
+
+        HOLE_COLORS = [
+            (1.0, 0.2, 0.2, 1.0),  # #0 red
+            (1.0, 0.6, 0.1, 1.0),  # #1 orange
+            (1.0, 1.0, 0.2, 1.0),  # #2 yellow
+            (1.0, 0.4, 0.7, 1.0),  # #3 pink
+        ]
+        PEG_COLORS = [
+            (1.0, 0.0, 1.0, 1.0),  # A magenta
+            (0.0, 1.0, 1.0, 1.0),  # B cyan
+            (0.5, 1.0, 0.0, 1.0),  # C lime
+            (0.6, 0.0, 1.0, 1.0),  # D purple
+        ]
+
+        # ---- 4 hole candidates with tick labels ----
+        for i, hw in enumerate(all_holes_world):
+            base = hw[0]
+            points.append(to_tuple(base))
+            colors.append(HOLE_COLORS[i])
+            sizes.append(16.0)
+            for j in range(i + 1):
+                tick = base.clone()
+                tick[2] = tick[2] + 0.025 + j * 0.012
+                points.append(to_tuple(tick))
+                colors.append(HOLE_COLORS[i])
+                sizes.append(8.0)
+
+        # ---- 4 top-corner candidates with tick labels ----
+        for i, pw in enumerate(all_pegs_world):
+            base = pw[0]
+            points.append(to_tuple(base))
+            colors.append(PEG_COLORS[i])
+            sizes.append(16.0)
+            for j in range(i + 1):
+                tick = base.clone()
+                tick[2] = tick[2] + 0.025 + j * 0.012
+                points.append(to_tuple(tick))
+                colors.append(PEG_COLORS[i])
+                sizes.append(8.0)
+
+        # ---- optional 3rd group: held-asset slots with tick labels ----
+        if all_slots_world is not None:
+            SLOT_COLORS = [
+                (0.2, 0.4, 1.0, 1.0),   # blue
+                (0.0, 0.8, 0.8, 1.0),   # teal
+                (0.7, 0.7, 1.0, 1.0),   # light blue
+                (0.4, 0.2, 0.8, 1.0),   # indigo
+            ]
+            for i, sw in enumerate(all_slots_world):
+                base = sw[0]
+                points.append(to_tuple(base))
+                colors.append(SLOT_COLORS[i])
+                sizes.append(16.0)
+                for j in range(i + 1):
+                    tick = base.clone()
+                    tick[2] = tick[2] + 0.025 + j * 0.012
+                    points.append(to_tuple(tick))
+                    colors.append(SLOT_COLORS[i])
+                    sizes.append(8.0)
+
+        self._dbg_draw.draw_points(points, colors, sizes)
+
+        # ---- alignment lines: chosen pegs ↔ chosen holes (yellow) + mid line (orange) ----
+        if len(chosen_pegs_world) == 2 and len(chosen_holes_world) == 2:
+            line_starts = [
+                to_tuple(chosen_pegs_world[0][0]),
+                to_tuple(chosen_pegs_world[1][0]),
+                to_tuple(peg_mid_world[0]),
+            ]
+            line_ends = [
+                to_tuple(chosen_holes_world[0][0]),
+                to_tuple(chosen_holes_world[1][0]),
+                to_tuple(target_mid_world[0]),
+            ]
+            self._dbg_draw.draw_lines(
+                line_starts,
+                line_ends,
+                [
+                    (1.0, 1.0, 0.0, 1.0),
+                    (1.0, 1.0, 0.0, 1.0),
+                    (1.0, 0.5, 0.0, 1.0),
+                ],
+                [3.0, 3.0, 2.0],
+            )
+
+    def _compute_scripted_action(self):
+        """Router — each task_idx has its own INDEPENDENT scripted policy."""
+        if self.cfg_task.task_idx == 1:
+            return self._scripted_action_top1_to_frame()
+        if self.cfg_task.task_idx == 2:
+            return self._scripted_action_top2_to_frame()
+        if self.cfg_task.task_idx == 3:
+            return self._scripted_action_side_to_frame()
+        return None
+
+    def _scripted_action_top1_to_frame(self):
+        """Top-frame 1 → vasskar base (idx 1) — 2-peg / 2-hole alignment,
+        same state machine as chair3 rod_to_frame. Visualizes ALL 4 base
+        holes and ALL 4 top1 corners with tick labels so the user can pick
+        which 2 of each to use.
+
+        Configure via ACTIVE_HOLE_INDICES and ACTIVE_PEG_INDICES below.
+        """
+        # =============================================================
+        # USER-SELECTABLE INDICES — change these once you see the labels.
+        # ACTIVE_HOLE_INDICES picks 2 entries from all_hole_locals (#0..#3)
+        # ACTIVE_PEG_INDICES  picks 2 entries from all_peg_top_locals (A..D)
+        # =============================================================
+        ACTIVE_HOLE_INDICES = (0, 2)   # red(#0, 1 tick) + yellow(#2, 3 ticks) — user-confirmed
+        ACTIVE_PEG_INDICES  = (0, 2)   # magenta(A) → red(#0), lime(C) → yellow(#2)
+
+        # =============================================================
+        # 1) ALL 4 base-hole candidates in frame local
+        # =============================================================
+        all_hole_locals_np = [
+            [0.010, 0.040, 0.000],   # #0
+            [0.010, 0.220, 0.000],   # #1
+            [0.290, 0.040, 0.000],   # #2
+            [0.290, 0.220, 0.000],   # #3
+        ]
+        all_holes_world = []
+        for hl in all_hole_locals_np:
+            hl_t = torch.tensor(hl, device=self.device).unsqueeze(0).repeat(self.num_envs, 1)
+            _, hw = torch_utils.tf_combine(
+                self.fixed_quat, self.fixed_pos, self.identity_quat, hl_t
+            )
+            all_holes_world.append(hw)
+
+        # =============================================================
+        # 2) ALL 4 top1-corner candidates in held local (apply scale)
+        # =============================================================
+        top_scale = torch.as_tensor(
+            self.cfg_task.top1.spawn.scale, dtype=torch.float32, device=self.device
+        )
+        sx_, sy_, sz_ = float(top_scale[0]), float(top_scale[1]), float(top_scale[2])
+        # Corner-cluster 3D bbox centers from top_re.obj inspection (not edge
+        # points). Each corner spans roughly 5–15 mm in x, 20 mm in y, 20 mm
+        # in z — these are the geometric centers of those clusters.
+        all_peg_top_locals_unscaled = [
+            [0.0025, 0.010, -0.010],   # A — corner near (0, 0)
+            [0.5625, 0.010, -0.010],   # B — corner near (0.57, 0)
+            [0.0025, 0.290, -0.010],   # C — corner near (0, 0.3)
+            [0.5625, 0.290, -0.010],   # D — corner near (0.57, 0.3)
+        ]
+        all_pegs_world = []
+        for pu in all_peg_top_locals_unscaled:
+            pl = torch.tensor(
+                [pu[0] * sx_, pu[1] * sy_, pu[2] * sz_], device=self.device
+            ).unsqueeze(0).repeat(self.num_envs, 1)
+            _, pw = torch_utils.tf_combine(
+                self.held_quat, self.held_pos, self.identity_quat, pl
+            )
+            all_pegs_world.append(pw)
+
+        # =============================================================
+        # 3) Pick the ACTIVE pair for the policy
+        # =============================================================
+        hole1_world = all_holes_world[ACTIVE_HOLE_INDICES[0]]
+        hole2_world = all_holes_world[ACTIVE_HOLE_INDICES[1]]
+        peg1_world  = all_pegs_world [ACTIVE_PEG_INDICES[0]]
+        peg2_world  = all_pegs_world [ACTIVE_PEG_INDICES[1]]
+        hole_mid_world = (hole1_world + hole2_world) / 2.0
+        peg_mid_world  = (peg1_world  + peg2_world ) / 2.0
+
+        # =============================================================
+        # 4) Insertion axis in world
+        # =============================================================
+        axis_t_local = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, axis_t_local
+        )
+
+        # =============================================================
+        # 5) Tunables — 2-phase direct insertion: approach above hole_mid,
+        # then press straight down. No deliberate miss, no overshoot,
+        # no slide-back search.
+        # =============================================================
+        approach_height   = 0.10   # 100 mm above hole_mid along -axis_t
+        align_perp_tol    = 0.005  # 5 mm xy residual to latch press
+        align_along_tol   = 0.02   # 20 mm z residual to latch press
+        dwell_to_press    = 3      # frames near above_target before press
+        descent_scale     = 0.3
+        press_down_scale  = 0.2
+        final_press_depth = 0.10   # 100 mm into base
+        # NOTE on sign: vasskar1 fixed init rot = 180° about y, so
+        # axis_t = (0,0,1)_local → (0,0,-1)_world (points DOWN). Hence
+        # "above" = hole_mid - axis_t * h, "press" = hole_mid + axis_t * d.
+
+        # =============================================================
+        # 6) Targets
+        # =============================================================
+        above_target       = hole_mid_world - axis_t_world * approach_height
+        final_press_target = hole_mid_world + axis_t_world * final_press_depth
+
+        # =============================================================
+        # 7) State machine: phase A approach → phase B straight press.
+        # =============================================================
+        delta_pm = peg_mid_world - above_target
+        along_pm = (delta_pm * axis_t_world).sum(-1, keepdim=True)
+        perp_pm  = delta_pm - along_pm * axis_t_world
+        perp_dist  = torch.norm(perp_pm, dim=-1)
+        along_dist = torch.abs(along_pm.squeeze(-1))
+
+        near_above = (perp_dist < align_perp_tol) & (along_dist < align_along_tol)
+        self._near_hole_frames = torch.where(
+            near_above,
+            self._near_hole_frames + 1,
+            torch.zeros_like(self._near_hole_frames),
+        )
+        self._press_down_latched = self._press_down_latched | (
+            self._near_hole_frames >= dwell_to_press
+        )
+
+        target = torch.where(
+            self._press_down_latched.unsqueeze(-1),
+            final_press_target,
+            above_target,
+        )
+
+        # =============================================================
+        # 8) Visualization
+        # =============================================================
+        self._visualize_candidates(
+            all_holes_world=all_holes_world,
+            all_pegs_world=all_pegs_world,
+            chosen_pegs_world=[peg1_world, peg2_world],
+            chosen_holes_world=[hole1_world, hole2_world],
+            peg_mid_world=peg_mid_world,
+            target_mid_world=target,
+        )
+
+        delta = target - peg_mid_world
+        pos_action = delta / self.pos_threshold
+        pos_action = torch.clamp(pos_action, -1.0, 1.0)
+        scale_per_env = torch.where(
+            self._press_down_latched.unsqueeze(-1),
+            torch.full_like(pos_action, press_down_scale),
+            torch.full_like(pos_action, descent_scale),
+        )
+        pos_action = pos_action * scale_per_env
+
+        if self.joint_created:
+            pos_action = torch.zeros_like(pos_action)
+
+        rot_action = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action, rot_action, gripper_action], dim=-1)
+
+    def _scripted_action_top2_to_frame(self):
+        """Top-frame 2 → vasskar base (idx 2). Fully independent duplicate of
+        the idx-1 scripted policy. Same logic and tunables, only the target
+        insertion point differs: idx=2 targets the hole pair at y=0.220
+        (indices #1 and #3) instead of y=0.040 (indices #0 and #2). No state
+        is shared with idx-1 — all latches live on `_*_2` tensors.
+        """
+        # =============================================================
+        # USER-SELECTABLE INDICES — change these once you see the labels.
+        # ACTIVE_HOLE_INDICES picks 2 entries from all_hole_locals (#0..#3)
+        # ACTIVE_PEG_INDICES  picks 2 entries from all_peg_top_locals (A..D)
+        # =============================================================
+        ACTIVE_HOLE_INDICES = (1, 3)   # orange(#1) + pink(#3) — y=0.220 pair
+        ACTIVE_PEG_INDICES  = (0, 2)   # magenta(A) → orange(#1), lime(C) → pink(#3)
+
+        # =============================================================
+        # 1) ALL 4 base-hole candidates in frame local
+        # =============================================================
+        all_hole_locals_np = [
+            [0.010, 0.040, 0.000],   # #0
+            [0.010, 0.220, 0.000],   # #1
+            [0.290, 0.040, 0.000],   # #2
+            [0.290, 0.220, 0.000],   # #3
+        ]
+        all_holes_world = []
+        for hl in all_hole_locals_np:
+            hl_t = torch.tensor(hl, device=self.device).unsqueeze(0).repeat(self.num_envs, 1)
+            _, hw = torch_utils.tf_combine(
+                self.fixed_quat, self.fixed_pos, self.identity_quat, hl_t
+            )
+            all_holes_world.append(hw)
+
+        # =============================================================
+        # 2) ALL 4 top2-corner candidates in held local (apply scale)
+        # =============================================================
+        top_scale = torch.as_tensor(
+            self.cfg_task.top2.spawn.scale, dtype=torch.float32, device=self.device
+        )
+        sx_, sy_, sz_ = float(top_scale[0]), float(top_scale[1]), float(top_scale[2])
+        all_peg_top_locals_unscaled = [
+            [0.0025, 0.010, -0.010],   # A — corner near (0, 0)
+            [0.5625, 0.010, -0.010],   # B — corner near (0.57, 0)
+            [0.0025, 0.290, -0.010],   # C — corner near (0, 0.3)
+            [0.5625, 0.290, -0.010],   # D — corner near (0.57, 0.3)
+        ]
+        all_pegs_world = []
+        for pu in all_peg_top_locals_unscaled:
+            pl = torch.tensor(
+                [pu[0] * sx_, pu[1] * sy_, pu[2] * sz_], device=self.device
+            ).unsqueeze(0).repeat(self.num_envs, 1)
+            _, pw = torch_utils.tf_combine(
+                self.held_quat, self.held_pos, self.identity_quat, pl
+            )
+            all_pegs_world.append(pw)
+
+        # =============================================================
+        # 3) Pick the ACTIVE pair for the policy
+        # =============================================================
+        hole1_world = all_holes_world[ACTIVE_HOLE_INDICES[0]]
+        hole2_world = all_holes_world[ACTIVE_HOLE_INDICES[1]]
+        peg1_world  = all_pegs_world [ACTIVE_PEG_INDICES[0]]
+        peg2_world  = all_pegs_world [ACTIVE_PEG_INDICES[1]]
+        hole_mid_world = (hole1_world + hole2_world) / 2.0
+        peg_mid_world  = (peg1_world  + peg2_world ) / 2.0
+
+        # =============================================================
+        # 4) Insertion axis in world
+        # =============================================================
+        axis_t_local = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, axis_t_local
+        )
+
+        # =============================================================
+        # 5) Tunables — 2-phase direct insertion (same shape as idx=1).
+        # No deliberate miss, no overshoot. State lives on _2 latches.
+        # =============================================================
+        approach_height   = 0.10
+        align_perp_tol    = 0.005
+        align_along_tol   = 0.02
+        dwell_to_press    = 3
+        descent_scale     = 0.3
+        press_down_scale  = 0.2
+        final_press_depth = 0.10
+
+        # =============================================================
+        # 6) Targets
+        # =============================================================
+        above_target       = hole_mid_world - axis_t_world * approach_height
+        final_press_target = hole_mid_world + axis_t_world * final_press_depth
+
+        # =============================================================
+        # 7) State machine — approach → press. Only _2 latches are touched.
+        # =============================================================
+        delta_pm = peg_mid_world - above_target
+        along_pm = (delta_pm * axis_t_world).sum(-1, keepdim=True)
+        perp_pm  = delta_pm - along_pm * axis_t_world
+        perp_dist  = torch.norm(perp_pm, dim=-1)
+        along_dist = torch.abs(along_pm.squeeze(-1))
+
+        near_above = (perp_dist < align_perp_tol) & (along_dist < align_along_tol)
+        self._near_hole_frames_2 = torch.where(
+            near_above,
+            self._near_hole_frames_2 + 1,
+            torch.zeros_like(self._near_hole_frames_2),
+        )
+        self._press_down_latched_2 = self._press_down_latched_2 | (
+            self._near_hole_frames_2 >= dwell_to_press
+        )
+
+        target = torch.where(
+            self._press_down_latched_2.unsqueeze(-1),
+            final_press_target,
+            above_target,
+        )
+
+        # =============================================================
+        # 8) Visualization
+        # =============================================================
+        self._visualize_candidates(
+            all_holes_world=all_holes_world,
+            all_pegs_world=all_pegs_world,
+            chosen_pegs_world=[peg1_world, peg2_world],
+            chosen_holes_world=[hole1_world, hole2_world],
+            peg_mid_world=peg_mid_world,
+            target_mid_world=target,
+        )
+
+        delta = target - peg_mid_world
+        pos_action = delta / self.pos_threshold
+        pos_action = torch.clamp(pos_action, -1.0, 1.0)
+        scale_per_env = torch.where(
+            self._press_down_latched_2.unsqueeze(-1),
+            torch.full_like(pos_action, press_down_scale),
+            torch.full_like(pos_action, descent_scale),
+        )
+        pos_action = pos_action * scale_per_env
+
+        if self.joint_created:
+            pos_action = torch.zeros_like(pos_action)
+
+        rot_action = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action, rot_action, gripper_action], dim=-1)
+
+    def _scripted_action_side_to_frame(self):
+        """Side-frame → assembled base+top1+top2 (idx=3) — INDEPENDENT policy.
+
+        Alignment pairs (user-confirmed via visualization colors):
+          • slot #0 (BLUE on held)  ↔ top1 leg #0 (RED)
+          • slot #1 (TEAL on held)  ↔ top1 leg #2 (YELLOW)
+
+        3-phase flow with residual feedback at every transition:
+          A) AIR ALIGN: in the air, drive peg_mid → above hole_mid AND
+             align yaw (peg-line ‖ hole-line). Latch only when xy/z/yaw
+             residuals are all within tight tol for sustained frames.
+          B) DESCEND: straight drop, peg_mid → press_down_target. Yaw
+             frozen so descent doesn't twist the lid.
+          C) POST-LANDING FINE-TUNE: target = deeper press, continuously
+             correct xy + yaw residuals while maintaining DOWNWARD force
+             so the lid never lifts off the legs. Latches done when the
+             attach-joint condition fires.
+        """
+        # =============================================================
+        # 4 leg-cluster centroids per top plate (already-verified from
+        # idx=1: each leg spans ~5–15 mm × 20 mm × 20 mm; these are the
+        # 3D geometric centers of those clusters in top_local, unscaled).
+        # =============================================================
+        top_scale = torch.as_tensor(
+            self.cfg_task.top1.spawn.scale, dtype=torch.float32, device=self.device
+        )
+        sx_, sy_, sz_ = float(top_scale[0]), float(top_scale[1]), float(top_scale[2])
+        top_corner_locals_unscaled = [
+            [0.0025, 0.010, -0.010],   # leg #0 (1 tick)  x-y- corner
+            [0.5625, 0.010, -0.010],   # leg #1 (2 ticks) x+y-
+            [0.0025, 0.290, -0.010],   # leg #2 (3 ticks) x-y+
+            [0.5625, 0.290, -0.010],   # leg #3 (4 ticks) x+y+
+        ]
+
+        # top1 world pose
+        top1_pos = self._top1.data.root_pos_w - self.scene.env_origins
+        top1_quat = self._top1.data.root_quat_w
+        top1_corners_world = []
+        for cu in top_corner_locals_unscaled:
+            cl = torch.tensor(
+                [cu[0] * sx_, cu[1] * sy_, cu[2] * sz_], device=self.device
+            ).unsqueeze(0).repeat(self.num_envs, 1)
+            _, cw = torch_utils.tf_combine(
+                top1_quat, top1_pos, self.identity_quat, cl
+            )
+            top1_corners_world.append(cw)
+
+        # top2 world pose
+        top2_pos = self._top2.data.root_pos_w - self.scene.env_origins
+        top2_quat = self._top2.data.root_quat_w
+        top2_corners_world = []
+        for cu in top_corner_locals_unscaled:
+            cl = torch.tensor(
+                [cu[0] * sx_, cu[1] * sy_, cu[2] * sz_], device=self.device
+            ).unsqueeze(0).repeat(self.num_envs, 1)
+            _, cw = torch_utils.tf_combine(
+                top2_quat, top2_pos, self.identity_quat, cl
+            )
+            top2_corners_world.append(cw)
+
+        # =============================================================
+        # Held asset (frame3.usd) has 4 LARGE ELLIPTICAL slots on its
+        # BOTTOM face (z=-0.020). Each ellipse spans ~8 mm in x and
+        # ~20 mm in y (verified from mesh-vertex clusters). These are
+        # the 4 凹槽 that drop onto the 4 leg tops of top1+top2.
+        # =============================================================
+        held_slot_locals_unscaled = [
+            [0.010, 0.040, -0.020],   # slot #0 (1 tick)  blue
+            [0.290, 0.040, -0.020],   # slot #1 (2 ticks) teal
+            [0.010, 0.220, -0.020],   # slot #2 (3 ticks) light blue
+            [0.290, 0.220, -0.020],   # slot #3 (4 ticks) indigo
+        ]
+        held_slots_world = []
+        for sl in held_slot_locals_unscaled:
+            sl_t = torch.tensor(sl, device=self.device).unsqueeze(0).repeat(self.num_envs, 1)
+            _, sw = torch_utils.tf_combine(
+                self.held_quat, self.held_pos, self.identity_quat, sl_t
+            )
+            held_slots_world.append(sw)
+
+        # =============================================================
+        # 1) Active pair selection (user-confirmed correspondence).
+        #    Pegs (movable) = held slots #0, #1.
+        #    Holes (stationary) = top1 leg #0, leg #2.
+        # =============================================================
+        peg1_world = held_slots_world[0]
+        peg2_world = held_slots_world[1]
+        hole1_world = top1_corners_world[0]
+        hole2_world = top1_corners_world[2]
+        peg_mid_world  = (peg1_world  + peg2_world)  / 2.0
+        hole_mid_world = (hole1_world + hole2_world) / 2.0
+
+        # =============================================================
+        # 2) Insertion axis in world (from connection_cfg3.axis_t).
+        # =============================================================
+        axis_t_local = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, axis_t_local
+        )
+
+        # =============================================================
+        # 3) Tunables — residual-gated, tight tolerances.
+        # =============================================================
+        approach_height   = 0.10
+        align_perp_tol    = 0.002   # 2 mm xy residual
+        align_along_tol   = 0.005   # 5 mm z residual
+        dwell_to_press    = 10      # frames the air-aligned state must hold
+        descent_scale     = 0.3     # phase A approach scale
+        press_down_depth  = 0.05
+        press_down_scale  = 0.2     # phase B descent scale
+        # — yaw alignment (active in phase A air-align and phase C fine-
+        #   tune; frozen during phase B descent) —
+        yaw_align_tol     = 0.02    # ~1.15° yaw residual
+        yaw_align_scale   = 0.4     # P-gain on yaw_err
+        # — phase B→C contact detection on peg_mid —
+        contact_dz_thresh = 0.0003
+        contact_dwell     = 5
+        # — phase C continuous fine-tune (xy + yaw while keeping DOWNWARD
+        #   force so the lid never lifts off the legs) —
+        finetune_scale    = 0.15
+        final_press_depth = 0.10
+
+        # =============================================================
+        # 4) Targets.
+        # Phase A: peg_mid + yaw align in the air above hole_mid.
+        # Phase B: straight descent (peg_mid → press_down_target).
+        # Phase C: post-landing fine-tune — target = deeper press so
+        #          pos_action always has +axis_t component (lid stays
+        #          seated on the legs); xy + yaw residuals get corrected.
+        # =============================================================
+        above_target       = hole_mid_world - axis_t_world * approach_height
+        press_down_target  = hole_mid_world + axis_t_world * press_down_depth
+        final_press_target = hole_mid_world + axis_t_world * final_press_depth
+
+        # =============================================================
+        # 5) Yaw error (signed) between peg-line and hole-line in xy.
+        # =============================================================
+        peg_dir_world  = peg2_world  - peg1_world
+        hole_dir_world = hole2_world - hole1_world
+        peg_xy  = peg_dir_world[:,  :2]
+        hole_xy = hole_dir_world[:, :2]
+        peg_xy_n  = peg_xy  / (torch.norm(peg_xy,  dim=-1, keepdim=True) + 1e-8)
+        hole_xy_n = hole_xy / (torch.norm(hole_xy, dim=-1, keepdim=True) + 1e-8)
+        cross_z = peg_xy_n[:, 0] * hole_xy_n[:, 1] - peg_xy_n[:, 1] * hole_xy_n[:, 0]
+        dot_xy  = (peg_xy_n * hole_xy_n).sum(-1)
+        yaw_err = torch.atan2(cross_z, dot_xy)
+        yaw_aligned = torch.abs(yaw_err) < yaw_align_tol
+
+        # =============================================================
+        # 6) Phase transitions (residual-gated).
+        # =============================================================
+        # Phase A → B: peg_mid AND yaw both within tol, sustained.
+        d_A = peg_mid_world - above_target
+        along_A = (d_A * axis_t_world).sum(-1, keepdim=True)
+        perp_A  = d_A - along_A * axis_t_world
+        perp_dist_A  = torch.norm(perp_A, dim=-1)
+        along_dist_A = torch.abs(along_A.squeeze(-1))
+        air_aligned = (
+            (perp_dist_A < align_perp_tol)
+            & (along_dist_A < align_along_tol)
+            & yaw_aligned
+        )
+        self._near_hole_frames = torch.where(
+            air_aligned,
+            self._near_hole_frames + 1,
+            torch.zeros_like(self._near_hole_frames),
+        )
+        self._press_down_latched = self._press_down_latched | (
+            self._near_hole_frames >= dwell_to_press
+        )
+        # print(f"near_hole_frames: {self._near_hole_frames[0]}, perp: {perp_dist_A[0]:.4f}, along: {along_dist_A[0]:.4f}, yaw: {yaw_err[0]:.4f}")
+
+        # Phase B → C: peg_mid.z stalls (lid has landed on the legs).
+        peg_mid_z = peg_mid_world[:, 2]
+        dz_descent = self._prev_peg_z - peg_mid_z
+        stalled = (dz_descent < contact_dz_thresh) & self._press_down_latched
+        self._contact_frames = torch.where(
+            stalled,
+            self._contact_frames + 1,
+            torch.zeros_like(self._contact_frames),
+        )
+        self._search_active_latched = self._search_active_latched | (
+            self._contact_frames >= contact_dwell
+        )
+        self._prev_peg_z = peg_mid_z.clone()
+
+        # _final_press_latched / _overshoot_wait_frames unused now — fine-
+        # tune happens continuously inside phase C until joint_created.
+
+        # =============================================================
+        # 7) Per-phase target. ALL phases drive peg_mid.
+        # =============================================================
+        in_phase_A = ~self._press_down_latched
+        in_phase_B = self._press_down_latched & (~self._search_active_latched)
+        in_phase_C = self._search_active_latched
+
+        drive_point = peg_mid_world
+        target = torch.where(
+            in_phase_C.unsqueeze(-1),
+            final_press_target,
+            torch.where(
+                in_phase_B.unsqueeze(-1),
+                press_down_target,
+                above_target,
+            ),
+        )
+
+        # =============================================================
+        # 6) Visualization (3 groups + chosen pair + alignment lines).
+        # =============================================================
+        self._visualize_candidates(
+            all_holes_world=top1_corners_world,
+            all_pegs_world=top2_corners_world,
+            chosen_pegs_world=[peg1_world, peg2_world],
+            chosen_holes_world=[hole1_world, hole2_world],
+            peg_mid_world=peg_mid_world,
+            target_mid_world=target,
+            all_slots_world=held_slots_world,
+        )
+
+        # Drive peg_mid toward the per-phase target.
+        delta = target - drive_point
+        pos_action = delta / self.pos_threshold
+        pos_action = torch.clamp(pos_action, -1.0, 1.0)
+        # Phase A → descent_scale; B → press_down_scale; C → finetune_scale.
+        scale_per_env = torch.where(
+            in_phase_C.unsqueeze(-1),
+            torch.full_like(pos_action, finetune_scale),
+            torch.where(
+                in_phase_B.unsqueeze(-1),
+                torch.full_like(pos_action, press_down_scale),
+                torch.full_like(pos_action, descent_scale),
+            ),
+        )
+        pos_action = pos_action * scale_per_env
+
+        # Phase C: PRESS-DOWN has the highest priority. Force the
+        # along-axis_t component to FULL SATURATION (1.0) so the lid
+        # keeps being pressed onto the legs at the maximum allowed
+        # action magnitude. This overrides whatever the P-control or
+        # scale logic would have produced for the along-axis component.
+        # The in-plane (xy / perp to axis_t) component is preserved so
+        # P-control still closes xy residuals.
+        pos_along_signed = (pos_action * axis_t_world).sum(-1, keepdim=True)
+        pos_perp = pos_action - pos_along_signed * axis_t_world
+        pos_action_phaseC = pos_perp + axis_t_world * 1.0   # saturated max push
+        pos_action = torch.where(
+            in_phase_C.unsqueeze(-1),
+            pos_action_phaseC,
+            pos_action,
+        )
+
+        # NOTE idx=3: NO joint_created short-circuit. Auto-attach is
+        # disabled in _check_attach_condition for this task, and we want
+        # the phase C fine-tune to keep pushing down + correcting yaw
+        # indefinitely (lid settles physically on the legs).
+
+        # Yaw P-control active in phase A (air align) AND phase C (fine-
+        # tune). Frozen in phase B so the descent doesn't twist the lid.
+        rot_threshold_z = self.rot_threshold[:, 2]
+        yaw_action_z = (yaw_err / (rot_threshold_z + 1e-8)) * yaw_align_scale
+        yaw_action_z = torch.clamp(yaw_action_z, -1.0, 1.0)
+        yaw_active = in_phase_A | in_phase_C
+        yaw_action_z = torch.where(
+            yaw_active,
+            yaw_action_z,
+            torch.zeros_like(yaw_action_z),
+        )
+        rot_action = torch.zeros((self.num_envs, 3), device=self.device)
+        rot_action[:, 2] = yaw_action_z
+
+        gripper_action = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action, rot_action, gripper_action], dim=-1)
+
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
         self._visualize_markers()
@@ -443,7 +1240,12 @@ class FrankaVasskar1Env(DirectRLEnv):
         # self.actions = (
         #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
         # )
-        self.actions = action.clone()
+        # Scripted policy for idx=1 only — idx 2/3 keep the RL action.
+        scripted = self._compute_scripted_action()
+        if scripted is not None:
+            self.actions = scripted
+        else:
+            self.actions = action.clone()
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
@@ -686,6 +1488,26 @@ class FrankaVasskar1Env(DirectRLEnv):
         super()._reset_idx(env_ids)
         print("Resetting envs:", env_ids)
         self._remove_fixed_joint()
+        # Reset scripted-policy state (idx=1).
+        self._near_hole_frames.zero_()
+        self._search_active_latched.zero_()
+        self._search_step = 0
+        self._press_down_latched.zero_()
+        self._prev_peg_z.zero_()
+        self._contact_frames.zero_()
+        self._overshoot_reached_latched.zero_()
+        self._overshoot_wait_frames.zero_()
+        self._final_press_latched.zero_()
+        # Reset scripted-policy state (idx=2) — kept fully independent.
+        self._near_hole_frames_2.zero_()
+        self._search_active_latched_2.zero_()
+        self._search_step_2 = 0
+        self._press_down_latched_2.zero_()
+        self._prev_peg_z_2.zero_()
+        self._contact_frames_2.zero_()
+        self._overshoot_reached_latched_2.zero_()
+        self._overshoot_wait_frames_2.zero_()
+        self._final_press_latched_2.zero_()
         self._set_assets_to_default_pose(env_ids)
         self._set_franka_to_default_pose(joints=self.cfg.ctrl.reset_joints, env_ids=env_ids)
         self.step_sim_no_action()

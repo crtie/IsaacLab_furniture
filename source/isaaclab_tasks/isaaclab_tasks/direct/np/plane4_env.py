@@ -148,6 +148,17 @@ class FrankaPlane4Env(DirectRLEnv):
         self.ep_succeeded = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
         self.ep_success_times = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
 
+        # Scripted-policy state for plane4 idx=1 (upper_wing 4-hole ↦
+        # plane_wo_upper 4-peg). STRICTLY independent — every tensor
+        # carries `_p4_1` suffix so it can't bleed into any other idx.
+        self._xy_align_frames_p4_1     = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._xy_aligned_latched_p4_1  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._near_hover_frames_p4_1   = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._press_down_latched_p4_1  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._prev_along_p4_1          = torch.zeros((self.num_envs,), device=self.device)
+        self._stall_frames_p4_1        = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._wobble_step_p4_1         = 0
+
     def _get_keypoint_offsets(self, num_keypoints):
         """Get uniformly-spaced keypoints along a line of unit length, centered at 0."""
         keypoint_offsets = torch.zeros((num_keypoints, 3), device=self.device)
@@ -424,9 +435,296 @@ class FrankaPlane4Env(DirectRLEnv):
         indices = torch.zeros_like(all_envs)
         self.visualization_markers.visualize(loc, rots, marker_indices=indices)
 
+    # ------------------------------------------------------------------
+    # plane4 idx=1 — upper_wing 4-hole (HELD) ↦ plane_wo_upper 4-peg (FIXED)
+    # ------------------------------------------------------------------
+    # STRICT independence: every name carries the `_p4_1` suffix.
+    # Offline mesh analysis (DBSCAN ring detection):
+    #   plane_wo_upper.obj — 4 small peg tip clusters at top of model
+    #     (world z=+0.897 after fixed_quat (0, 0.707, 0.707, 0) rotation).
+    #     Back-solved into fixed_local UNSCALED at z=-0.0638:
+    #       P1 (-x,-y): (-0.0692, +0.0196, -0.0638)
+    #       P2 (+x,-y): (+0.0692, +0.0195, -0.0638)
+    #       P3 (+x,+y): (+0.0692, +0.0354, -0.0638)
+    #       P4 (-x,+y): (-0.0689, +0.0354, -0.0638)
+    #   upper_wing.obj — 4 z-axis through-holes in held_local UNSCALED:
+    #       H1 (-x,-y): (-0.0697, +0.0032, -0.0050)
+    #       H2 (+x,-y): (+0.0683, +0.0032, -0.0050)
+    #       H3 (+x,+y): (+0.0683, +0.0192, -0.0050)
+    #       H4 (-x,+y): (-0.0697, +0.0192, -0.0050)
+    P4_1_PEG_LOCAL = [
+        (-0.0692, +0.0196, -0.0638),   # P1
+        (+0.0692, +0.0195, -0.0638),   # P2
+        (+0.0692, +0.0354, -0.0638),   # P3
+        (-0.0689, +0.0354, -0.0638),   # P4
+    ]
+    P4_1_HOLE_LOCAL = [
+        (-0.0697, +0.0032, -0.0050),   # H1 — pairs with P1
+        (+0.0683, +0.0032, -0.0050),   # H2 — pairs with P2
+        (+0.0683, +0.0192, -0.0050),   # H3 — pairs with P3
+        (-0.0697, +0.0192, -0.0050),   # H4 — pairs with P4
+    ]
+    P4_1_PEG_SCALE  = 1.2
+    P4_1_HOLE_SCALE = 1.2
+
+    def _compute_peg_hole_worlds_p4_1(self):
+        """Transform the 4 peg local positions through fixed pose and
+        the 4 hole local positions through held pose, returning tensors
+        of shape (4, num_envs, 3) for peg world and hole world."""
+        s_peg = self.P4_1_PEG_SCALE
+        s_hole = self.P4_1_HOLE_SCALE
+        peg_worlds = []
+        hole_worlds = []
+        for p in self.P4_1_PEG_LOCAL:
+            local = torch.tensor(
+                [p[0]*s_peg, p[1]*s_peg, p[2]*s_peg],
+                dtype=torch.float32, device=self.device,
+            ).unsqueeze(0).repeat(self.num_envs, 1)
+            _, w = torch_utils.tf_combine(
+                self.fixed_quat, self.fixed_pos, self.identity_quat, local
+            )
+            peg_worlds.append(w)
+        for h in self.P4_1_HOLE_LOCAL:
+            local = torch.tensor(
+                [h[0]*s_hole, h[1]*s_hole, h[2]*s_hole],
+                dtype=torch.float32, device=self.device,
+            ).unsqueeze(0).repeat(self.num_envs, 1)
+            _, w = torch_utils.tf_combine(
+                self.held_quat, self.held_pos, self.identity_quat, local
+            )
+            hole_worlds.append(w)
+        return peg_worlds, hole_worlds  # each is a list of 4 (num_envs,3) tensors
+
+    def _visualize_four_pegs_four_holes_p4_1(self):
+        """Draw 4 GREEN dots = upper_wing hole CENTERS,
+        4 RED dots = plane_wo_upper peg TIP CENTERS,
+        and 4 paired lines connecting Hk ↔ Pk."""
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        if not getattr(self, "_p4_1_legend_printed", False):
+            print("\n[plane4 idx=1] viewer legend (4 holes ↦ 4 pegs):")
+            for i, (h, p) in enumerate(zip(self.P4_1_HOLE_LOCAL, self.P4_1_PEG_LOCAL)):
+                print(f"  H{i+1}: held_local {h}  ↔  P{i+1}: fixed_local {p}")
+            self._p4_1_legend_printed = True
+
+        env_origin = self.scene.env_origins[0]
+        peg_worlds, hole_worlds = self._compute_peg_hole_worlds_p4_1()
+
+        def _to_tuple(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        points = []
+        colors = []
+        sizes  = []
+        lines_a, lines_b, line_c, line_w = [], [], [], []
+        for k in range(4):
+            h_w = _to_tuple(hole_worlds[k][0])
+            p_w = _to_tuple(peg_worlds[k][0])
+            points.append(h_w); colors.append((0.0, 1.0, 0.0, 1.0)); sizes.append(20.0)
+            points.append(p_w); colors.append((1.0, 0.0, 0.0, 1.0)); sizes.append(20.0)
+            lines_a.append(h_w); lines_b.append(p_w)
+            # Color each peg-hole pair distinctly by hue (HSV around the 4 corners).
+            import colorsys
+            rgb = colorsys.hsv_to_rgb(k / 4.0, 0.6, 1.0)
+            line_c.append((rgb[0], rgb[1], rgb[2], 1.0))
+            line_w.append(3.0)
+
+        self._dbg_draw.clear_points()
+        self._dbg_draw.clear_lines()
+        self._dbg_draw.draw_points(points, colors, sizes)
+        self._dbg_draw.draw_lines(lines_a, lines_b, line_c, line_w)
+
+    def _scripted_action_four_peg_insert_p4_1(self):
+        """plane4 idx=1 — drive upper_wing's 4-hole centroid onto
+        plane_wo_upper's 4-peg centroid in world xy, align the rectangle
+        yaw using the H1-H2 (back x-line) vs P1-P2 line, then descend
+        along world -z. Latched 3-phase policy with stall + wobble.
+        All variables `_p4_1` — no overlap with any other idx."""
+        xy_align_frames_p4_1    = self._xy_align_frames_p4_1
+        xy_aligned_latched_p4_1 = self._xy_aligned_latched_p4_1
+        near_hover_frames_p4_1  = self._near_hover_frames_p4_1
+        press_down_latched_p4_1 = self._press_down_latched_p4_1
+
+        hover_offset_m_p4_1       = 0.05
+        align_perp_tol_p4_1       = 0.003
+        along_tol_p4_1            = 0.01
+        yaw_align_tol_rad_p4_1    = 0.05
+        dwell_xy_align_p4_1       = 5
+        dwell_to_press_p4_1       = 5
+        press_down_depth_p4_1     = 0.20
+        descent_scale_p4_1        = 0.3
+        press_scale_p4_1          = 0.2
+        yaw_align_scale_p4_1      = 0.4
+        stall_threshold_m_p4_1    = 0.0003
+        stall_dwell_frames_p4_1   = 8
+        wobble_amplitude_p4_1     = 0.0015
+        wobble_period_frames_p4_1 = 30
+
+        peg_worlds, hole_worlds = self._compute_peg_hole_worlds_p4_1()
+        # Stack to (4, num_envs, 3) → (num_envs, 4, 3)
+        pegs = torch.stack(peg_worlds, dim=1)   # (num_envs, 4, 3)
+        holes = torch.stack(hole_worlds, dim=1) # (num_envs, 4, 3)
+        peg_mid = pegs.mean(dim=1)
+        hole_mid = holes.mean(dim=1)
+
+        axis_t_world_p4_1 = torch.tensor(
+            [0.0, 0.0, 1.0], dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+
+        drive_world_p4_1  = hole_mid
+        target_world_p4_1 = peg_mid
+
+        above_target_p4_1      = target_world_p4_1 + axis_t_world_p4_1 * hover_offset_m_p4_1
+        press_down_target_p4_1 = target_world_p4_1 - axis_t_world_p4_1 * press_down_depth_p4_1
+
+        delta_mid_p4_1     = drive_world_p4_1 - target_world_p4_1
+        along_mid_p4_1     = (delta_mid_p4_1 * axis_t_world_p4_1).sum(-1, keepdim=True)
+        perp_mid_p4_1      = delta_mid_p4_1 - along_mid_p4_1 * axis_t_world_p4_1
+        mid_perp_norm_p4_1 = torch.norm(perp_mid_p4_1, dim=-1)
+
+        # Yaw: use the H2-H1 (back x-line) vs P2-P1 line projected to perp.
+        hole_vec_p4_1 = holes[:, 1, :] - holes[:, 0, :]
+        peg_vec_p4_1  = pegs[:, 1, :]  - pegs[:, 0, :]
+        hv_perp_p4_1 = hole_vec_p4_1.clone(); hv_perp_p4_1[:, 2] = 0.0
+        pv_perp_p4_1 = peg_vec_p4_1.clone();  pv_perp_p4_1[:, 2] = 0.0
+        cross_p4_1 = torch.cross(hv_perp_p4_1, pv_perp_p4_1, dim=-1)
+        sin_yaw_p4_1 = (cross_p4_1 * axis_t_world_p4_1).sum(-1)
+        cos_yaw_p4_1 = (hv_perp_p4_1 * pv_perp_p4_1).sum(-1)
+        yaw_err_p4_1 = torch.atan2(sin_yaw_p4_1, cos_yaw_p4_1)
+
+        xy_aligned_p4_1 = (mid_perp_norm_p4_1 < align_perp_tol_p4_1) & (
+            torch.abs(yaw_err_p4_1) < yaw_align_tol_rad_p4_1
+        )
+        xy_align_frames_p4_1 = torch.where(
+            xy_aligned_p4_1,
+            xy_align_frames_p4_1 + 1,
+            torch.zeros_like(xy_align_frames_p4_1),
+        )
+        xy_aligned_latched_p4_1 = xy_aligned_latched_p4_1 | (
+            xy_align_frames_p4_1 >= dwell_xy_align_p4_1
+        )
+
+        d_above_p4_1     = drive_world_p4_1 - above_target_p4_1
+        along_above_p4_1 = torch.abs((d_above_p4_1 * axis_t_world_p4_1).sum(-1))
+        near_hover_p4_1 = (
+            xy_aligned_latched_p4_1
+            & (mid_perp_norm_p4_1 < align_perp_tol_p4_1)
+            & (along_above_p4_1 < along_tol_p4_1)
+        )
+        near_hover_frames_p4_1 = torch.where(
+            near_hover_p4_1,
+            near_hover_frames_p4_1 + 1,
+            torch.zeros_like(near_hover_frames_p4_1),
+        )
+        press_down_latched_p4_1 = press_down_latched_p4_1 | (
+            near_hover_frames_p4_1 >= dwell_to_press_p4_1
+        )
+
+        self._xy_align_frames_p4_1    = xy_align_frames_p4_1
+        self._xy_aligned_latched_p4_1 = xy_aligned_latched_p4_1
+        self._near_hover_frames_p4_1  = near_hover_frames_p4_1
+        self._press_down_latched_p4_1 = press_down_latched_p4_1
+
+        in_phase_A1_p4_1 = ~xy_aligned_latched_p4_1
+        in_phase_A2_p4_1 = xy_aligned_latched_p4_1 & (~press_down_latched_p4_1)
+        in_phase_B_p4_1  = press_down_latched_p4_1
+
+        target_p4_1 = torch.where(
+            in_phase_B_p4_1.unsqueeze(-1),
+            press_down_target_p4_1,
+            above_target_p4_1,
+        )
+
+        delta_p4_1      = target_p4_1 - drive_world_p4_1
+        pos_action_p4_1 = delta_p4_1 / self.pos_threshold
+        pos_action_p4_1 = torch.clamp(pos_action_p4_1, -1.0, 1.0)
+
+        pa_along_signed_p4_1 = (pos_action_p4_1 * axis_t_world_p4_1).sum(-1, keepdim=True)
+        pa_perp_p4_1 = pos_action_p4_1 - pa_along_signed_p4_1 * axis_t_world_p4_1
+        pos_action_p4_1 = torch.where(
+            in_phase_A1_p4_1.unsqueeze(-1), pa_perp_p4_1, pos_action_p4_1
+        )
+
+        scale_p4_1 = torch.where(
+            in_phase_B_p4_1.unsqueeze(-1),
+            torch.full_like(pos_action_p4_1, press_scale_p4_1),
+            torch.full_like(pos_action_p4_1, descent_scale_p4_1),
+        )
+        pos_action_p4_1 = pos_action_p4_1 * scale_p4_1
+
+        along_now_p4_1 = (drive_world_p4_1 * axis_t_world_p4_1).sum(-1)
+        progress_p4_1 = torch.abs(along_now_p4_1 - self._prev_along_p4_1)
+        stalled_now_p4_1 = (progress_p4_1 < stall_threshold_m_p4_1) & in_phase_B_p4_1
+        self._stall_frames_p4_1 = torch.where(
+            stalled_now_p4_1,
+            self._stall_frames_p4_1 + 1,
+            torch.zeros_like(self._stall_frames_p4_1),
+        )
+        self._prev_along_p4_1 = along_now_p4_1.clone()
+        wobble_active_p4_1 = self._stall_frames_p4_1 >= stall_dwell_frames_p4_1
+
+        if bool(wobble_active_p4_1.any().item()):
+            self._wobble_step_p4_1 += 1
+
+        e1_world_p4_1 = torch.tensor(
+            [1.0, 0.0, 0.0], dtype=torch.float32, device=self.device,
+        ).expand_as(axis_t_world_p4_1)
+
+        import math as _math
+        phase_rad_p4_1 = (
+            2.0 * _math.pi * (self._wobble_step_p4_1 / wobble_period_frames_p4_1)
+        )
+        wobble_offset_m_p4_1 = wobble_amplitude_p4_1 * _math.sin(phase_rad_p4_1)
+        wobble_norm_p4_1 = wobble_offset_m_p4_1 / float(self.pos_threshold[0, 0].item())
+        wobble_vec_p4_1 = e1_world_p4_1 * wobble_norm_p4_1
+        pos_action_p4_1 = torch.where(
+            wobble_active_p4_1.unsqueeze(-1),
+            pos_action_p4_1 + wobble_vec_p4_1,
+            pos_action_p4_1,
+        )
+        pos_action_p4_1 = torch.clamp(pos_action_p4_1, -1.0, 1.0)
+
+        rot_action_vec_p4_1 = axis_t_world_p4_1 * yaw_err_p4_1.unsqueeze(-1) * (
+            yaw_align_scale_p4_1 / (self.rot_threshold + 1e-8)
+        )
+        rot_action_vec_p4_1 = torch.clamp(rot_action_vec_p4_1, -1.0, 1.0)
+        rot_action_vec_p4_1 = torch.where(
+            in_phase_B_p4_1.unsqueeze(-1),
+            torch.zeros_like(rot_action_vec_p4_1),
+            rot_action_vec_p4_1,
+        )
+
+        phase = "A1-xy/yaw" if bool(in_phase_A1_p4_1[0]) else (
+            "A2-hover" if bool(in_phase_A2_p4_1[0]) else "B-press"
+        )
+        center_dx_p4_1 = float(perp_mid_p4_1[0, 0])
+        center_dy_p4_1 = float(perp_mid_p4_1[0, 1])
+        print(
+            f"[p4_1] phase={phase}  "
+            f"dx={center_dx_p4_1*1000:+.2f}mm dy={center_dy_p4_1*1000:+.2f}mm  "
+            f"perp_mid={mid_perp_norm_p4_1[0]*1000:.2f}mm "
+            f"yaw={yaw_err_p4_1[0]*180/3.14159:+.2f}°  "
+            f"xy_latch={int(xy_aligned_latched_p4_1[0])} "
+            f"press_latch={int(press_down_latched_p4_1[0])}  "
+            f"stall={int(self._stall_frames_p4_1[0])} "
+            f"wobble={'YES' if bool(wobble_active_p4_1[0]) else 'no'}"
+        )
+
+        rot_action_p4_1     = rot_action_vec_p4_1
+        gripper_action_p4_1 = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action_p4_1, rot_action_p4_1, gripper_action_p4_1], dim=-1)
+
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
         self._visualize_markers()
+        if self.cfg_task.task_idx == 1:
+            self._visualize_four_pegs_four_holes_p4_1()
         self._check_attach_condition()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
@@ -435,7 +733,10 @@ class FrankaPlane4Env(DirectRLEnv):
         # self.actions = (
         #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
         # )
-        self.actions = action.clone()
+        if self.cfg_task.task_idx == 1:
+            self.actions = self._scripted_action_four_peg_insert_p4_1()
+        else:
+            self.actions = action.clone()
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
@@ -678,6 +979,17 @@ class FrankaPlane4Env(DirectRLEnv):
         super()._reset_idx(env_ids)
         print("Resetting envs:", env_ids)
         self._remove_fixed_joint()
+
+        # Reset scripted-policy state for plane4 idx=1 (independent —
+        # only zeroes the `_p4_1` tensors, no overlap with anything else).
+        self._xy_align_frames_p4_1.zero_()
+        self._xy_aligned_latched_p4_1.zero_()
+        self._near_hover_frames_p4_1.zero_()
+        self._press_down_latched_p4_1.zero_()
+        self._prev_along_p4_1.zero_()
+        self._stall_frames_p4_1.zero_()
+        self._wobble_step_p4_1 = 0
+
         self._set_assets_to_default_pose(env_ids)
         self._set_franka_to_default_pose(joints=self.cfg.ctrl.reset_joints, env_ids=env_ids)
         self.step_sim_no_action()

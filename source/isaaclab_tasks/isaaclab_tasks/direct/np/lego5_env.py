@@ -928,7 +928,7 @@ class FrankaLego5Env(DirectRLEnv):
         )
 
         if self.cfg_task.task_idx == 1:
-            rot_euler = torch.tensor([-1.5707, -1.5707, +1.5707], device=self.device).repeat(
+            rot_euler = torch.tensor([3.1416, -1.5707, 3.1416], device=self.device).repeat(
             self.num_envs, 1
             )
             translated_held_asset_quat = torch_utils.quat_from_euler_xyz(
@@ -1001,5 +1001,6 @@ class FrankaLego5Env(DirectRLEnv):
 
         # Set initial gains for the episode.
         self._set_gains(self.default_gains)
-        physics_sim_view.set_gravity(carb.Float3(*self.cfg.sim.gravity))
+        # Keep gravity off for the whole episode (was: restore self.cfg.sim.gravity).
+        physics_sim_view.set_gravity(carb.Float3(0.0, 0.0, 0.0))
         self.step_sim_no_action()

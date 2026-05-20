@@ -148,6 +148,12 @@ class FrankaLego6Env(DirectRLEnv):
         self.ep_succeeded = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
         self.ep_success_times = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
 
+        # Phase latches for lego6 idx=1 scripted insert (held=right-arm peg, fixed=torso socket).
+        # _hover_latched_l6_1: True once peg reached the ABOVE-socket hover point.
+        # _press_down_latched_l6_1: True once peg reached the socket center (engages deep-press).
+        self._hover_latched_l6_1       = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._press_down_latched_l6_1  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+
     def _get_keypoint_offsets(self, num_keypoints):
         """Get uniformly-spaced keypoints along a line of unit length, centered at 0."""
         keypoint_offsets = torch.zeros((num_keypoints, 3), device=self.device)
@@ -300,6 +306,8 @@ class FrankaLego6Env(DirectRLEnv):
     def _reset_buffers(self, env_ids):
         """Reset buffers."""
         self.ep_succeeded[env_ids] = 0
+        self._hover_latched_l6_1[env_ids] = False
+        self._press_down_latched_l6_1[env_ids] = False
 
 
     def _get_real_mat(self):
@@ -424,9 +432,182 @@ class FrankaLego6Env(DirectRLEnv):
         indices = torch.zeros_like(all_envs)
         self.visualization_markers.visualize(loc, rots, marker_indices=indices)
 
+    # ------------------------------------------------------------------
+    # lego6 idx=1 — right-arm SHOULDER joint (HELD peg) ↦ torso RIGHT-shoulder socket (FIXED hole)
+    # ------------------------------------------------------------------
+    # Offline mesh analysis on .obj:
+    #   rightarm.obj — shoulder is a perpendicular CYLINDER with axis along x.
+    #     Cylinder extends x=+0.0241..+0.0421 (length ~18 mm), yz axis at
+    #     (+0.0094, -0.0610), radius ≈ 0.0199. High-precision contour
+    #     centroid of all 1307 cylinder vertices: (+0.032331, +0.009352, -0.061048).
+    #     Peg outward (sticks out) = +x in held_local.
+    #   torso_leg_leftarm.obj — RIGHT shoulder socket on the -x side of the
+    #     torso, upper-body region. Outer surface ring at x≈-0.068, yz_C≈
+    #     (+0.105, +0.004), r≈0.014 (best -x outer cluster). Take the SOCKET
+    #     CENTER pushed +x into the body (deeper inside, like lego2/3/4).
+    L6_1_PEG_LOCAL          = (+0.032331, +0.009352, -0.061048)  # right arm shoulder cylinder CONTOUR CENTROID (held_local)
+    L6_1_PEG_SCALE          = (1.0, 1.0, 1.0)
+    L6_1_HOLE_LOCAL         = (-0.0500, +0.1250, +0.0040)        # torso right shoulder socket CENTER (fixed_local). world +x = fixed_local +y after fixed_quat (0.5,0.5,0.5,-0.5), so +y nudges red along world +x arrow.
+    L6_1_HOLE_SCALE         = (1.0, 1.0, 1.0)
+    # Direction the right-arm PEG must travel during insertion, expressed
+    # in fixed_local. Socket opens on -x side of torso; peg enters going +x.
+    L6_1_INSERT_AXIS_LOCAL  = (+1.0, 0.0, 0.0)
+
+    def _visualize_peg_and_hole_l6_1(self):
+        """Draw GREEN = right-arm shoulder peg CENTER (on HELD),
+                RED   = torso right-shoulder socket CENTER (on FIXED),
+                YELLOW line = current error."""
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        if not getattr(self, "_l6_1_legend_printed", False):
+            print("\n[lego6 idx=1] viewer legend (arm-peg-into-torso-socket):")
+            print(f"  GREEN dot = right-arm shoulder peg CENTER  held_local  {self.L6_1_PEG_LOCAL}  × {self.L6_1_PEG_SCALE}")
+            print(f"  RED   dot = torso right socket CENTER       fixed_local {self.L6_1_HOLE_LOCAL} × {self.L6_1_HOLE_SCALE}")
+            self._l6_1_legend_printed = True
+
+        peg_local = torch.tensor(
+            [self.L6_1_PEG_LOCAL[0] * self.L6_1_PEG_SCALE[0],
+             self.L6_1_PEG_LOCAL[1] * self.L6_1_PEG_SCALE[1],
+             self.L6_1_PEG_LOCAL[2] * self.L6_1_PEG_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, peg_local
+        )
+        hole_local = torch.tensor(
+            [self.L6_1_HOLE_LOCAL[0] * self.L6_1_HOLE_SCALE[0],
+             self.L6_1_HOLE_LOCAL[1] * self.L6_1_HOLE_SCALE[1],
+             self.L6_1_HOLE_LOCAL[2] * self.L6_1_HOLE_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, hole_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, hole_local
+        )
+
+        env_origin = self.scene.env_origins[0]
+
+        def _to_tuple(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        g = _to_tuple(peg_world[0])
+        r = _to_tuple(hole_world[0])
+        self._dbg_draw.clear_points()
+        self._dbg_draw.clear_lines()
+        self._dbg_draw.draw_points(
+            [g, r],
+            [(0.0, 1.0, 0.0, 1.0), (1.0, 0.0, 0.0, 1.0)],
+            [22.0, 22.0],
+        )
+        self._dbg_draw.draw_lines([g], [r], [(1.0, 1.0, 0.0, 1.0)], [3.0])
+
+    def _scripted_action_peg_insert_l6_1(self):
+        """lego6 idx=1 — three-stage trajectory (two latches):
+        Stage 1 HOVER : drive GREEN (right-arm peg, on HELD) to a point
+            ABOVE the socket — offset by hover_dist along -axis_t. This
+            aligns the perpendicular (horizontal) position first without
+            colliding into the torso side.
+        Stage 2 INSERT (latched once HOVER reached): drive peg straight to
+            the socket center, then continue past it along +axis_t."""
+        hover_tol_l6_1    = 0.005   # 5 mm — switch to insert phase
+        arrive_tol_l6_1   = 0.005   # 5 mm — engage deep-press
+        hover_dist_l6_1   = 0.05    # 50 mm above socket (along -axis_t)
+        press_depth_l6_1  = 0.10
+        move_scale_l6_1   = 0.3
+
+        peg_local_l6_1 = torch.tensor(
+            [self.L6_1_PEG_LOCAL[0] * self.L6_1_PEG_SCALE[0],
+             self.L6_1_PEG_LOCAL[1] * self.L6_1_PEG_SCALE[1],
+             self.L6_1_PEG_LOCAL[2] * self.L6_1_PEG_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_world_l6_1 = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, peg_local_l6_1
+        )
+        hole_local_l6_1 = torch.tensor(
+            [self.L6_1_HOLE_LOCAL[0] * self.L6_1_HOLE_SCALE[0],
+             self.L6_1_HOLE_LOCAL[1] * self.L6_1_HOLE_SCALE[1],
+             self.L6_1_HOLE_LOCAL[2] * self.L6_1_HOLE_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, hole_world_l6_1 = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, hole_local_l6_1
+        )
+
+        axis_t_local_l6_1 = torch.tensor(
+            list(self.L6_1_INSERT_AXIS_LOCAL),
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t_l6_1 = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world_l6_1 = torch_utils.tf_combine(
+            self.fixed_quat, zero_t_l6_1, self.identity_quat, axis_t_local_l6_1
+        )
+        axis_t_world_l6_1 = axis_t_world_l6_1 / axis_t_world_l6_1.norm(
+            dim=-1, keepdim=True
+        ).clamp(min=1e-8)
+
+        # Three stages, gated by two latches:
+        #   1) HOVER  — go to point offset from socket by -axis_t * hover_dist
+        #   2) DROP   — once HOVER reached, drive peg straight down to socket
+        #   3) PRESS  — once socket reached, push past it along +axis_t
+        hover_target_l6_1  = hole_world_l6_1 - axis_t_world_l6_1 * hover_dist_l6_1
+        insert_target_l6_1 = hole_world_l6_1 + axis_t_world_l6_1 * press_depth_l6_1
+
+        dist_to_hover_l6_1 = (hover_target_l6_1 - peg_world_l6_1).norm(dim=-1)
+        dist_to_hole_l6_1  = (hole_world_l6_1  - peg_world_l6_1).norm(dim=-1)
+
+        hover_reached_now_l6_1 = dist_to_hover_l6_1 < hover_tol_l6_1
+        self._hover_latched_l6_1 = self._hover_latched_l6_1 | hover_reached_now_l6_1
+
+        # Only allow press latch AFTER hover is done.
+        arrived_now_l6_1 = (dist_to_hole_l6_1 < arrive_tol_l6_1) & self._hover_latched_l6_1
+        self._press_down_latched_l6_1 = self._press_down_latched_l6_1 | arrived_now_l6_1
+
+        target_l6_1 = torch.where(
+            self._press_down_latched_l6_1.unsqueeze(-1),
+            insert_target_l6_1,
+            torch.where(
+                self._hover_latched_l6_1.unsqueeze(-1),
+                hole_world_l6_1,
+                hover_target_l6_1,
+            ),
+        )
+
+        # Drive the held arm so its peg reaches the target.
+        delta_l6_1      = target_l6_1 - peg_world_l6_1
+        pos_action_l6_1 = delta_l6_1 / self.pos_threshold
+        pos_action_l6_1 = torch.clamp(pos_action_l6_1, -1.0, 1.0) * move_scale_l6_1
+
+        if bool(self._press_down_latched_l6_1[0]):
+            phase_l6_1 = "PRESS"
+        elif bool(self._hover_latched_l6_1[0]):
+            phase_l6_1 = "DROP"
+        else:
+            phase_l6_1 = "HOVER"
+        d_l6_1 = (hole_world_l6_1 - peg_world_l6_1)[0]
+        print(
+            f"[l6_1] {phase_l6_1}  "
+            f"dx={float(d_l6_1[0])*1000:+.2f}mm "
+            f"dy={float(d_l6_1[1])*1000:+.2f}mm "
+            f"dz={float(d_l6_1[2])*1000:+.2f}mm "
+            f"to_hover={float(dist_to_hover_l6_1[0])*1000:.2f}mm "
+            f"to_hole={float(dist_to_hole_l6_1[0])*1000:.2f}mm"
+        )
+
+        rot_action_l6_1     = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action_l6_1 = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action_l6_1, rot_action_l6_1, gripper_action_l6_1], dim=-1)
+
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
         self._visualize_markers()
+        if self.cfg_task.task_idx == 1:
+            self._visualize_peg_and_hole_l6_1()
         self._check_attach_condition()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
@@ -435,7 +616,10 @@ class FrankaLego6Env(DirectRLEnv):
         # self.actions = (
         #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
         # )
-        self.actions = action.clone()
+        if self.cfg_task.task_idx == 1:
+            self.actions = self._scripted_action_peg_insert_l6_1()
+        else:
+            self.actions = action.clone()
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""

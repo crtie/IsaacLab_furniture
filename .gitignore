@@ -69,3 +69,8 @@ tests/
 
 # Docker history
 .isaac-lab-docker-history
+
+# Ignore copy files
+**/* copy*.py
+**/* copy*
+**/*copy*.py

@@ -5,6 +5,8 @@
 import sys, os
 sys.path.append(os.path.abspath(__file__))
 
+import math
+
 import numpy as np
 import torch
 
@@ -78,6 +80,11 @@ class FrankaChair4Env(DirectRLEnv):
         self._set_friction(self._fixed_asset, self.cfg_task.fixed_asset_cfg.friction)
         self._set_friction(self._robot, self.cfg_task.robot_cfg.friction)
 
+        # All scene surfaces frictionless (held asset included — gripper grip
+        # via robot 5.0 friction → avg-combine 2.5 is enough to hold).
+        self._set_friction(self._held_asset, 0.0)
+        self._set_friction(self._fixed_asset, 0.0)
+
     def _set_friction(self, asset, value):
         """Update material properties for a given asset."""
         materials = asset.root_physx_view.get_material_properties()
@@ -146,6 +153,13 @@ class FrankaChair4Env(DirectRLEnv):
 
         self.ep_succeeded = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
         self.ep_success_times = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+
+        # Scripted-policy state machine (idx=1 frame→subassembly insertion).
+        self._near_hole_frames = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._search_active_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._search_step = 0
+        self._press_down_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._search_center_perp = torch.zeros((self.num_envs, 3), device=self.device)
 
     def _get_keypoint_offsets(self, num_keypoints):
         """Get uniformly-spaced keypoints along a line of unit length, centered at 0."""
@@ -418,8 +432,204 @@ class FrankaChair4Env(DirectRLEnv):
             limit_api.CreateLowAttr(-0.01)
             limit_api.CreateHighAttr(0.01)
 
+    def _visualize_frame_alignment(self, hole1, hole2, peg1, peg2,
+                                    hole_mid, target_mid):
+        """Draw 2 hole-peg pairs (red↔green) plus the mid-to-target arrow."""
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
 
+        self._dbg_draw.clear_points()
+        self._dbg_draw.clear_lines()
 
+        env_origin = self.scene.env_origins[0]
+
+        def to_tuple(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        h1 = to_tuple(hole1[0])
+        h2 = to_tuple(hole2[0])
+        g1 = to_tuple(peg1[0])
+        g2 = to_tuple(peg2[0])
+        m_red = to_tuple(hole_mid[0])
+        m_green = to_tuple(target_mid[0])
+
+        self._dbg_draw.draw_points(
+            [h1, h2, g1, g2, m_red, m_green],
+            [
+                (1.0, 0.0, 0.0, 1.0),
+                (1.0, 0.0, 0.0, 1.0),
+                (0.0, 1.0, 0.0, 1.0),
+                (0.0, 1.0, 0.0, 1.0),
+                (1.0, 0.5, 0.0, 1.0),
+                (0.0, 1.0, 1.0, 1.0),
+            ],
+            [22.0, 22.0, 22.0, 22.0, 14.0, 14.0],
+        )
+        self._dbg_draw.draw_lines(
+            [h1, h2, m_red],
+            [g1, g2, m_green],
+            [
+                (1.0, 1.0, 0.0, 1.0),
+                (1.0, 1.0, 0.0, 1.0),
+                (1.0, 0.5, 0.0, 1.0),
+            ],
+            [3.0, 3.0, 2.0],
+        )
+
+    def _compute_scripted_action(self):
+        """Router — only idx=1 has a scripted policy here (frame → subassembly)."""
+        if self.cfg_task.task_idx == 1:
+            return self._scripted_action_frame_to_assembly()
+        return None
+
+    def _scripted_action_frame_to_assembly(self):
+        """Frame (mirror) → top of chair subassembly (idx 1).
+
+        The "held" Frame has 2 holes that must slide onto 2 protruding plug
+        tops baked into the ChairFrameBackRodRod fixed asset. The plug
+        tops sit where chair3.connection_cfg4 / cfg5 placed them in chair
+        local. Driving hole_mid → peg_mid handles both translational
+        alignment and (implicitly) yaw via 2-point geometry.
+
+        Frame-local hole positions are computed by inverting chair4 cfg1
+        (R = diag(-1,-1,1), t = (0.2877, 0.2510, -0.00052)):
+            hole = cfg1.R^T @ (peg_chair_local - cfg1.t)
+        with peg_chair_local taken from chair3.cfg4/5 translations.
+        """
+        # ==== Frame's 2 hole positions in Frame local (precomputed) ====
+        hole1_local = torch.tensor([0.2696, 0.0150, -0.2695], device=self.device)
+        hole2_local = torch.tensor([0.2691, 0.0150, -0.2465], device=self.device)
+        hole1_local = hole1_local.unsqueeze(0).repeat(self.num_envs, 1)
+        hole2_local = hole2_local.unsqueeze(0).repeat(self.num_envs, 1)
+
+        _, hole1_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, hole1_local
+        )
+        _, hole2_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, hole2_local
+        )
+        hole_mid_world = (hole1_world + hole2_world) / 2.0
+
+        # ==== 2 peg tops in chair local (from chair3.cfg4/5 translations) ====
+        peg1_chair_local = torch.tensor(
+            [0.0182, 0.236, -0.27], device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        peg2_chair_local = torch.tensor(
+            [0.0186, 0.236, -0.247], device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg1_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, peg1_chair_local
+        )
+        _, peg2_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, peg2_chair_local
+        )
+        peg_mid_world = (peg1_world + peg2_world) / 2.0
+
+        # ==== Insertion axis in world (cfg1.axis_t = (0,1,0) chair local) ====
+        axis_t_local = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, axis_t_local
+        )
+
+        # ==== Perp-plane basis ====
+        ref = torch.tensor([1.0, 0.0, 0.0], device=self.device).expand_as(axis_t_local)
+        parallel = (axis_t_local * ref).sum(-1, keepdim=True).abs() > 0.9
+        ref = torch.where(
+            parallel,
+            torch.tensor([0.0, 0.0, 1.0], device=self.device).expand_as(axis_t_local),
+            ref,
+        )
+        e1_local = torch.cross(axis_t_local, ref, dim=-1)
+        e1_local = e1_local / torch.norm(e1_local, dim=-1, keepdim=True).clamp(min=1e-6)
+        e2_local = torch.cross(axis_t_local, e1_local, dim=-1)
+        e2_local = e2_local / torch.norm(e2_local, dim=-1, keepdim=True).clamp(min=1e-6)
+        _, e1_world = torch_utils.tf_combine(self.fixed_quat, zero_t, self.identity_quat, e1_local)
+        _, e2_world = torch_utils.tf_combine(self.fixed_quat, zero_t, self.identity_quat, e2_local)
+
+        # ==== Tunables ====
+        guess_offset_magnitude = 0.00  # initial perp offset for spiral center
+        near_radius = 0.008
+        dwell_to_search = 5
+        spiral_angle_step = math.pi / 12
+        spiral_radial_step = 0.0001
+        spiral_idx_max = 300            # radius caps at 30 mm; angle uncapped
+        descent_scale = 0.3
+
+        offset_perp_world = e1_world * guess_offset_magnitude
+        offset_center_world = peg_mid_world + offset_perp_world
+
+        # ==== Phase 1 -> 2: hole_mid near offset_center → start spiral ====
+        mid_to_offset = torch.norm(offset_center_world - hole_mid_world, dim=-1)
+        near_offset = mid_to_offset < near_radius
+        self._near_hole_frames = torch.where(
+            near_offset,
+            self._near_hole_frames + 1,
+            torch.zeros_like(self._near_hole_frames),
+        )
+        just_search_latched = (~self._search_active_latched) & (
+            self._near_hole_frames >= dwell_to_search
+        )
+        if bool(just_search_latched.any().item()):
+            delta_now = hole_mid_world - peg_mid_world
+            along_now = (delta_now * axis_t_world).sum(-1, keepdim=True)
+            perp_now = delta_now - along_now * axis_t_world
+            self._search_center_perp = torch.where(
+                just_search_latched.unsqueeze(-1),
+                perp_now,
+                self._search_center_perp,
+            )
+        self._search_active_latched = self._search_active_latched | (
+            self._near_hole_frames >= dwell_to_search
+        )
+
+        # ==== Spiral (angle uncapped, radius capped) ====
+        in_search_phase = self._search_active_latched
+        if bool(in_search_phase.any().item()):
+            self._search_step += 1
+
+        radius_k = min(self._search_step, spiral_idx_max)
+        angle = self._search_step * spiral_angle_step
+        radius = radius_k * spiral_radial_step
+        sx = radius * math.cos(angle)
+        sy = radius * math.sin(angle)
+        spiral_offset_world = sx * e1_world + sy * e2_world
+        search_target = (
+            peg_mid_world
+            + self._search_center_perp
+            + spiral_offset_world
+        )
+
+        # No press_down latch — keep spinning until joint_created fires.
+        target = torch.where(
+            self._search_active_latched.unsqueeze(-1),
+            search_target,
+            offset_center_world,
+        )
+
+        self._visualize_frame_alignment(
+            hole1_world, hole2_world, peg1_world, peg2_world, hole_mid_world, target
+        )
+
+        # Drive hole_mid → target (delta lives in world frame).
+        delta = target - hole_mid_world
+        pos_action = delta / self.pos_threshold
+        pos_action = torch.clamp(pos_action, -1.0, 1.0)
+        pos_action = pos_action * descent_scale
+
+        if self.joint_created:
+            pos_action = torch.zeros_like(pos_action)
+
+        rot_action = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action, rot_action, gripper_action], dim=-1)
 
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
@@ -431,7 +641,12 @@ class FrankaChair4Env(DirectRLEnv):
         # self.actions = (
         #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
         # )
-        self.actions = action.clone()
+        # idx=1 uses scripted frame→subassembly policy; other task_idx keep RL action.
+        scripted = self._compute_scripted_action()
+        if scripted is not None:
+            self.actions = scripted
+        else:
+            self.actions = action.clone()
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
@@ -674,6 +889,12 @@ class FrankaChair4Env(DirectRLEnv):
         super()._reset_idx(env_ids)
         print("Resetting envs:", env_ids)
         self._remove_fixed_joint()
+        # Reset scripted-policy state.
+        self._near_hole_frames.zero_()
+        self._search_active_latched.zero_()
+        self._search_step = 0
+        self._press_down_latched.zero_()
+        self._search_center_perp.zero_()
         self._set_assets_to_default_pose(env_ids)
         self._set_franka_to_default_pose(joints=self.cfg.ctrl.reset_joints, env_ids=env_ids)
         self.step_sim_no_action()

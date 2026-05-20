@@ -5,6 +5,8 @@
 import sys, os
 sys.path.append(os.path.abspath(__file__))
 
+import math
+
 import numpy as np
 import torch
 
@@ -78,6 +80,18 @@ class FrankaChair6Env(DirectRLEnv):
         self._set_friction(self._fixed_asset, self.cfg_task.fixed_asset_cfg.friction)
         self._set_friction(self._robot, self.cfg_task.robot_cfg.friction)
 
+        # All scene surfaces frictionless (gripper still holds via robot 5.0
+        # friction → avg-combine 2.5 with the held screw). Required for the
+        # spiral search to slide without binding.
+        self._set_friction(self._fixed_asset, 0.0)
+        self._set_friction(self._held_asset, 0.0)
+        if hasattr(self, "_screw1") and self._screw1 is not self._held_asset:
+            self._set_friction(self._screw1, 0.0)
+        if hasattr(self, "_screw2") and self._screw2 is not self._held_asset:
+            self._set_friction(self._screw2, 0.0)
+        if hasattr(self, "_screw3") and self._screw3 is not self._held_asset:
+            self._set_friction(self._screw3, 0.0)
+
     def _set_friction(self, asset, value):
         """Update material properties for a given asset."""
         materials = asset.root_physx_view.get_material_properties()
@@ -146,6 +160,12 @@ class FrankaChair6Env(DirectRLEnv):
 
         self.ep_succeeded = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
         self.ep_success_times = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+
+        # Scripted-policy state machine (screw insertion, idx 1/2/3).
+        self._near_hole_frames = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._search_active_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._search_step = 0
+        self._press_down_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
 
     def _get_keypoint_offsets(self, num_keypoints):
         """Get uniformly-spaced keypoints along a line of unit length, centered at 0."""
@@ -517,6 +537,254 @@ class FrankaChair6Env(DirectRLEnv):
 
 
 
+    def _visualize_tip_and_hole(self, peg_tip_world, hole_pos_world):
+        """Red = screw tip, green = hole opening, blue = held origin, yellow line = delta."""
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        self._dbg_draw.clear_points()
+        self._dbg_draw.clear_lines()
+
+        env_origin = self.scene.env_origins[0]
+
+        def to_tuple(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        tip_t = to_tuple(peg_tip_world[0])
+        hole_t = to_tuple(hole_pos_world[0])
+        held_t = to_tuple(self.held_pos[0])
+
+        self._dbg_draw.draw_points(
+            [tip_t, hole_t, held_t],
+            [
+                (1.0, 0.0, 0.0, 1.0),
+                (0.0, 1.0, 0.0, 1.0),
+                (0.2, 0.5, 1.0, 1.0),
+            ],
+            [25.0, 25.0, 14.0],
+        )
+        self._dbg_draw.draw_lines(
+            [tip_t],
+            [hole_t],
+            [(1.0, 1.0, 0.0, 1.0)],
+            [3.0],
+        )
+
+    def _compute_scripted_action(self):
+        """Router — all 3 chair6 task_idx values run the scripted screw insert."""
+        if self.cfg_task.task_idx in (1, 2, 3):
+            return self._scripted_action_screw_insert()
+        return None
+
+    def _scripted_action_screw_insert(self):
+        """Screw → chair hole (chair6 idx 1/2/3) — same pattern as chair5.
+
+        Flow: approach an offset 5 mm along the line toward the closest
+        OTHER screw hole → dwell → spiral outward → trigger press_down
+        when the REAL screw tip passes over the hole center → screw
+        descends → joint_created. After joint_created the env's
+        `_sync_held_asset` takes over the rotational drive.
+
+        Screw geometry (screw.obj, scale (0.6, 0.6, 0.7)):
+          - bbox x ∈ [0, 0.0104], y ∈ [0, 0.012], z ∈ [-0.05, 0]
+          - shaft-axis center (xc, yc) un-scaled = (0.0052, 0.006)
+            → after xy scale 0.6 = (0.00312, 0.00360)
+          - shaft tip in screw local: z = -0.05 * 0.7 = -0.035
+
+        head_protrusion is per-task because cfg1 has a very different
+        cfg.t.y than cfg2/cfg3 (cfg1 sits ~25 mm above a different
+        chair-body surface). Tune empirically if the green marker is
+        not aligned with the visible hole circle.
+        """
+        # ==== Tunables ====
+        # Per-task visual offset (chair-local) that shifts the rendered green
+        # hole-opening marker onto the visible hole circle on the chair USD.
+        # Measured by finding the nearest chair-mesh vertex to each cfg.t:
+        #   idx=1 → cfg1.z is 13 mm above rod2's top surface (along chair -z)
+        #   idx=2 → cfg2.y is 25 mm above frame_mirror top (along chair -y)
+        #   idx=3 → cfg3.y is 25 mm above frame_mirror top (along chair -y)
+        # axis_t=(0,1,0) can't reach idx=1's z-offset, so a 3D offset is used.
+        visual_hole_offset_local_map = {
+            1: torch.tensor([0.0,  0.0,   -0.013], device=self.device),
+            2: torch.tensor([0.0, -0.025,  0.0],   device=self.device),
+            3: torch.tensor([0.0, -0.025,  0.0],   device=self.device),
+        }
+        visual_hole_offset_local = visual_hole_offset_local_map[
+            self.cfg_task.task_idx
+        ].unsqueeze(0).repeat(self.num_envs, 1)
+        screw_usd_length = 0.05
+        screw_scale_x = float(self.cfg_task.screw1.spawn.scale[0])
+        screw_scale_y = float(self.cfg_task.screw1.spawn.scale[1])
+        screw_scale_z = float(self.cfg_task.screw1.spawn.scale[2])
+        screw_axis_center_x = 0.0052 * screw_scale_x  # bbox mid in x
+        screw_axis_center_y = 0.006  * screw_scale_y  # bbox mid in y
+        guess_offset_magnitude = 0.005
+        near_radius = 0.005
+        dwell_to_search = 5
+        spiral_angle_step = math.pi / 12
+        spiral_radial_step = 0.0001
+        press_detect_radius = 0.0015
+        spiral_idx_max = 300
+        descent_scale = 0.3
+
+        # ==== Screw shaft tip in world (cylinder axis lower end) ====
+        tip_offset_local = torch.zeros((self.num_envs, 3), device=self.device)
+        tip_offset_local[:, 0] = screw_axis_center_x
+        tip_offset_local[:, 1] = screw_axis_center_y
+        tip_offset_local[:, 2] = -screw_usd_length * screw_scale_z
+        _, peg_tip_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, tip_offset_local
+        )
+
+        # ==== Hole center in world (corrected for screw bbox-corner origin) ====
+        pose_to_base = torch.as_tensor(
+            self._connection_cfg.pose_to_base, dtype=torch.float32, device=self.device
+        )
+        cfg_R = pose_to_base[:3, :3]
+        cfg_t = pose_to_base[:3, 3]
+        axis_center_chair = cfg_R @ torch.tensor(
+            [screw_axis_center_x, screw_axis_center_y, 0.0],
+            dtype=torch.float32, device=self.device,
+        )
+        hole_pos_local = (cfg_t + axis_center_chair).unsqueeze(0).repeat(self.num_envs, 1)
+        _, hole_pos_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, hole_pos_local
+        )
+        axis_t_local = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, axis_t_local
+        )
+        # Visual hole opening = chair-local cfg target + per-idx offset rotated to world.
+        zero_offset = torch.zeros_like(self.fixed_pos)
+        _, visual_hole_offset_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_offset, self.identity_quat, visual_hole_offset_local
+        )
+        hole_opening_world = hole_pos_world + visual_hole_offset_world
+        # Mindless press-down: target is driven WAY past cfg.t along axis_t so
+        # the screw is unconditionally pushed all the way home once latched
+        # (无脑下压到底). Joint creation will fire naturally once SE3 distance
+        # comes in range mid-descent.
+        press_down_depth = 0.20  # 200 mm — far deeper than the screw, ensures full insertion
+        press_down_target = hole_pos_world - axis_t_world * press_down_depth
+
+        # ==== Perp-plane basis for the spiral ====
+        ref = torch.tensor([1.0, 0.0, 0.0], device=self.device).expand_as(axis_t_local)
+        parallel = (axis_t_local * ref).sum(-1, keepdim=True).abs() > 0.9
+        ref = torch.where(
+            parallel,
+            torch.tensor([0.0, 0.0, 1.0], device=self.device).expand_as(axis_t_local),
+            ref,
+        )
+        e1_local = torch.cross(axis_t_local, ref, dim=-1)
+        e1_local = e1_local / torch.norm(e1_local, dim=-1, keepdim=True).clamp(min=1e-6)
+        e2_local = torch.cross(axis_t_local, e1_local, dim=-1)
+        e2_local = e2_local / torch.norm(e2_local, dim=-1, keepdim=True).clamp(min=1e-6)
+        _, e1_world = torch_utils.tf_combine(self.fixed_quat, zero_t, self.identity_quat, e1_local)
+        _, e2_world = torch_utils.tf_combine(self.fixed_quat, zero_t, self.identity_quat, e2_local)
+
+        # ==== Offset start point — 5 mm along the line toward another hole ====
+        # Pairings (chair6 has 3 widely-spaced holes — pick any other):
+        #   idx=1 ↔ cfg2  (smallest Euclidean distance)
+        #   idx=2 ↔ cfg1
+        #   idx=3 ↔ cfg1
+        other_pose_map = {
+            1: self.cfg_task.connection_cfg2.pose_to_base,
+            2: self.cfg_task.connection_cfg1.pose_to_base,
+            3: self.cfg_task.connection_cfg1.pose_to_base,
+        }
+        other_pose_np = other_pose_map[self.cfg_task.task_idx]
+        other_R = torch.as_tensor(other_pose_np[:3, :3], dtype=torch.float32, device=self.device)
+        other_t = torch.as_tensor(other_pose_np[:3, 3],  dtype=torch.float32, device=self.device)
+        other_axis_center_chair = other_R @ torch.tensor(
+            [screw_axis_center_x, screw_axis_center_y, 0.0],
+            dtype=torch.float32, device=self.device,
+        )
+        other_hole_local = (other_t + other_axis_center_chair).unsqueeze(0).repeat(self.num_envs, 1)
+        _, other_hole_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, other_hole_local
+        )
+        # Other hole's visual position uses the same per-idx offset so the
+        # line-direction calc stays consistent with hole_opening_world.
+        other_hole_opening_world = other_hole_world + visual_hole_offset_world
+        line_dir = other_hole_opening_world - hole_opening_world
+        line_dir = line_dir / torch.norm(line_dir, dim=-1, keepdim=True).clamp(min=1e-6)
+        offset_center_world = hole_opening_world + line_dir * guess_offset_magnitude
+
+        # ==== Phase 1 -> 2: tip near offset_center for dwell_to_search frames ====
+        tip_to_offset = torch.norm(offset_center_world - peg_tip_world, dim=-1)
+        near_offset = tip_to_offset < near_radius
+        self._near_hole_frames = torch.where(
+            near_offset,
+            self._near_hole_frames + 1,
+            torch.zeros_like(self._near_hole_frames),
+        )
+        self._search_active_latched = self._search_active_latched | (
+            self._near_hole_frames >= dwell_to_search
+        )
+
+        # ==== Spiral step ====
+        in_search_phase = self._search_active_latched & (~self._press_down_latched)
+        if bool(in_search_phase.any().item()):
+            self._search_step += 1
+
+        k = min(self._search_step, spiral_idx_max)
+        angle = k * spiral_angle_step
+        radius = k * spiral_radial_step
+        sx = radius * math.cos(angle)
+        sy = radius * math.sin(angle)
+        search_target = offset_center_world + sx * e1_world + sy * e2_world
+
+        # ==== Phase 2 -> 3: REAL screw tip over hole center (perp distance) ====
+        delta_pt = peg_tip_world - hole_opening_world
+        along_pt = (delta_pt * axis_t_world).sum(-1, keepdim=True)
+        perp_pt = delta_pt - along_pt * axis_t_world
+        peg_to_hole_perp = torch.norm(perp_pt, dim=-1)
+        self._press_down_latched = self._press_down_latched | (
+            in_search_phase & (peg_to_hole_perp < press_detect_radius)
+        )
+
+        # ==== Target select ====
+        target = torch.where(
+            self._press_down_latched.unsqueeze(-1),
+            press_down_target,
+            torch.where(
+                in_search_phase.unsqueeze(-1),
+                search_target,
+                offset_center_world,
+            ),
+        )
+
+        self._visualize_tip_and_hole(peg_tip_world, hole_opening_world)
+
+        delta = target - peg_tip_world
+        pos_action = delta / self.pos_threshold
+        pos_action = torch.clamp(pos_action, -1.0, 1.0)
+        # Mindless press: full speed (1.0) once press_down latches, otherwise
+        # use the slow descent scale for approach/search.
+        scale_per_env = torch.where(
+            self._press_down_latched.unsqueeze(-1),
+            torch.ones_like(pos_action),
+            torch.full_like(pos_action, descent_scale),
+        )
+        pos_action = pos_action * scale_per_env
+
+        if self.joint_created:
+            # After the screw joint exists, hand control back to `_sync_held_asset`
+            # which drives the rotational descent. Zero out scripted pos delta.
+            pos_action = torch.zeros_like(pos_action)
+
+        rot_action = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action, rot_action, gripper_action], dim=-1)
+
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
         self._check_attach_condition()
@@ -530,7 +798,12 @@ class FrankaChair6Env(DirectRLEnv):
         # self.actions = (
         #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
         # )
-        self.actions = action.clone()
+        # Scripted policy overrides RL action for chair6 screw insert tasks.
+        scripted = self._compute_scripted_action()
+        if scripted is not None:
+            self.actions = scripted
+        else:
+            self.actions = action.clone()
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
@@ -773,6 +1046,11 @@ class FrankaChair6Env(DirectRLEnv):
         super()._reset_idx(env_ids)
         print("Resetting envs:", env_ids)
         self._remove_fixed_joint()
+        # Reset scripted-policy state.
+        self._near_hole_frames.zero_()
+        self._search_active_latched.zero_()
+        self._search_step = 0
+        self._press_down_latched.zero_()
         self._set_assets_to_default_pose(env_ids)
         self._set_franka_to_default_pose(joints=self.cfg.ctrl.reset_joints, env_ids=env_ids)
         self.step_sim_no_action()
@@ -976,6 +1254,11 @@ class FrankaChair6Env(DirectRLEnv):
             hand_down_euler = (
                 torch.tensor(self.cfg_task.hand_init_orn, device=self.device).unsqueeze(0).repeat(n_bad, 1)
             )
+            # Rotate gripper around its wrist (yaw) at init so the fingers run
+            # parallel to the chair plane instead of crossing the camera view.
+            # Adjust `wrist_yaw_offset` if the gripper is rotated wrong way.
+            wrist_yaw_offset = math.pi / 2
+            hand_down_euler[:, 2] += wrist_yaw_offset
 
             rand_sample = torch.rand((n_bad, 3), dtype=torch.float32, device=self.device)
             above_fixed_orn_noise = 2 * (rand_sample - 0.5)  # [-1, 1]

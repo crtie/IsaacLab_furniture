@@ -5,6 +5,8 @@
 import sys, os
 sys.path.append(os.path.abspath(__file__))
 
+import math
+
 import numpy as np
 import torch
 
@@ -78,6 +80,35 @@ class FrankaChair2Env(DirectRLEnv):
         self._set_friction(self._fixed_asset, self.cfg_task.fixed_asset_cfg.friction)
         self._set_friction(self._robot, self.cfg_task.robot_cfg.friction)
 
+        # Make the chair-frame surface frictionless so the plug can slide
+        # freely while the spiral searches for the hole.
+        if self.cfg_task.task_idx in (1, 2):
+            self._set_friction(self._fixed_asset, 0.0)
+
+        # idx=3 (rod → 2 seated plugs): make the 2 already-seated plugs
+        # frictionless so the rod can slide onto them without snagging.
+        if self.cfg_task.task_idx == 3:
+            for plug_attr in ("_plug1", "_plug2"):
+                plug = getattr(self, plug_attr, None)
+                if plug is not None and plug is not self._held_asset:
+                    self._set_friction(plug, 0.0)
+
+        # idx=4/5 (plug → rod top hole): the rod is a scene fixture that the
+        # held plug needs to slide into — set its friction to 0 so the peg
+        # doesn't snag on the hole rim during descent.
+        if (
+            self.cfg_task.task_idx in (4, 5)
+            and getattr(self, "_rod_asset", None) is not None
+            and self._rod_asset is not self._held_asset
+        ):
+            self._set_friction(self._rod_asset, 0.0)
+
+        # Any other seated plug (idx 2, 5) in the scene is also frictionless.
+        for plug_attr in ("_plug1", "_plug2"):
+            plug = getattr(self, plug_attr, None)
+            if plug is not None and plug is not self._held_asset:
+                self._set_friction(plug, 0.0)
+
     def _set_friction(self, asset, value):
         """Update material properties for a given asset."""
         materials = asset.root_physx_view.get_material_properties()
@@ -146,6 +177,18 @@ class FrankaChair2Env(DirectRLEnv):
 
         self.ep_succeeded = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
         self.ep_success_times = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+
+        # Scripted-policy state machine (idx=1/2 plug→hole insertion).
+        self._near_hole_frames = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._xy_aligned_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._search_active_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._search_step = 0
+        self._press_down_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        # Extra state for idx=3 (rod → frame): 4-phase machine with descent-stall recovery.
+        self._descend_latched = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._prev_held_z = torch.full((self.num_envs,), float("nan"), device=self.device)
+        self._stuck_frames = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._search_center_perp = torch.zeros((self.num_envs, 3), device=self.device)
 
     def _get_keypoint_offsets(self, num_keypoints):
         """Get uniformly-spaced keypoints along a line of unit length, centered at 0."""
@@ -460,8 +503,688 @@ class FrankaChair2Env(DirectRLEnv):
             limit_api.CreateLowAttr(-0.01)
             limit_api.CreateHighAttr(0.01)
 
+    def _visualize_tip_and_hole(self, peg_tip_world, hole_pos_world):
+        """Visualize peg tip (red), plug origin (blue), hole (green), delta (yellow)."""
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
 
+        self._dbg_draw.clear_points()
+        self._dbg_draw.clear_lines()
 
+        env_origin = self.scene.env_origins[0]
+
+        def to_tuple(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        tip_t = to_tuple(peg_tip_world[0])
+        hole_t = to_tuple(hole_pos_world[0])
+        held_t = to_tuple(self.held_pos[0])
+
+        self._dbg_draw.draw_points(
+            [tip_t, hole_t, held_t],
+            [
+                (1.0, 0.0, 0.0, 1.0),
+                (0.0, 1.0, 0.0, 1.0),
+                (0.2, 0.5, 1.0, 1.0),
+            ],
+            [25.0, 25.0, 14.0],
+        )
+        self._dbg_draw.draw_lines(
+            [tip_t],
+            [hole_t],
+            [(1.0, 1.0, 0.0, 1.0)],
+            [3.0],
+        )
+
+    def _compute_scripted_action(self):
+        """Router — dispatch per task_idx. Returns None for task_idx with no
+        scripted policy so the caller falls back to the RL action."""
+        if self.cfg_task.task_idx in (1, 2):
+            return self._scripted_action_plug_to_hole()
+        if self.cfg_task.task_idx == 3:
+            return self._scripted_action_rod_to_frame()
+        if self.cfg_task.task_idx in (4, 5):
+            return self._scripted_action_plug_to_rod()
+        return None
+
+    def _scripted_action_plug_to_hole(self):
+        """Plug → chair-frame hole (idx 1/2) — offset + spiral search (mirrors
+        chair1_env.py's idx=4/5 plug→backrest policy structure).
+
+        Flow: approach an offset 5 mm along the two-hole line → dwell →
+        spiral outward → PEG TIP (red) passes over real hole → press_down →
+        joint_created.
+        """
+        # ==== Tunables ====
+        head_protrusion = 0.0094
+        plug_usd_length = 0.029
+        plug_scale = float(self.cfg_task.plug1.spawn.scale[2])
+        plug_axis_center_local = 0.004 * plug_scale  # plug bbox corner → cylinder axis
+        guess_offset_magnitude = 0.003     # 5 mm along the two-hole line
+        spiral_angle_step = math.pi / 12   # 15°/step (24 per turn)
+        spiral_radial_step = 0.0001        # 0.1 mm/step (2.4 mm/turn)
+        press_detect_radius = 0.0015       # 1.5 mm trigger threshold (perp plane)
+        spiral_idx_max = 300
+        descent_scale = 0.3                # slow descent factor (entire trajectory)
+        search_press_magnitude = 0.1       # small downward action during spiral to keep peg on surface
+
+        # ==== Peg lower tip in world (cylinder center) ====
+        tip_offset_local = torch.zeros((self.num_envs, 3), device=self.device)
+        tip_offset_local[:, 0] = plug_axis_center_local
+        tip_offset_local[:, 1] = plug_axis_center_local
+        tip_offset_local[:, 2] = -plug_usd_length * plug_scale
+        _, peg_tip_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, tip_offset_local
+        )
+
+        # ==== Hole center in world (corrected for plug bbox-corner origin) ====
+        pose_to_base = torch.as_tensor(
+            self._connection_cfg.pose_to_base, dtype=torch.float32, device=self.device
+        )
+        cfg_R = pose_to_base[:3, :3]
+        cfg_t = pose_to_base[:3, 3]
+        axis_center_chair = cfg_R @ torch.tensor(
+            [plug_axis_center_local, plug_axis_center_local, 0.0],
+            dtype=torch.float32, device=self.device,
+        )
+        hole_pos_local = (cfg_t + axis_center_chair).unsqueeze(0).repeat(self.num_envs, 1)
+        _, hole_pos_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, hole_pos_local
+        )
+        axis_t_local = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, axis_t_local
+        )
+        hole_opening_world = hole_pos_world - axis_t_world * head_protrusion
+        press_down_target = hole_pos_world - axis_t_world * (plug_usd_length * plug_scale)
+
+        # ==== Perp-plane basis for the spiral ====
+        ref = torch.tensor([1.0, 0.0, 0.0], device=self.device).expand_as(axis_t_local)
+        parallel = (axis_t_local * ref).sum(-1, keepdim=True).abs() > 0.9
+        ref = torch.where(
+            parallel,
+            torch.tensor([0.0, 0.0, 1.0], device=self.device).expand_as(axis_t_local),
+            ref,
+        )
+        e1_local = torch.cross(axis_t_local, ref, dim=-1)
+        e1_local = e1_local / torch.norm(e1_local, dim=-1, keepdim=True).clamp(min=1e-6)
+        e2_local = torch.cross(axis_t_local, e1_local, dim=-1)
+        e2_local = e2_local / torch.norm(e2_local, dim=-1, keepdim=True).clamp(min=1e-6)
+        _, e1_world = torch_utils.tf_combine(self.fixed_quat, zero_t, self.identity_quat, e1_local)
+        _, e2_world = torch_utils.tf_combine(self.fixed_quat, zero_t, self.identity_quat, e2_local)
+
+        # ==== Offset start point — 5 mm along the line to the OTHER hole ====
+        if self.cfg_task.task_idx == 1:
+            other_pose_np = self.cfg_task.connection_cfg2.pose_to_base
+        else:
+            other_pose_np = self.cfg_task.connection_cfg1.pose_to_base
+        other_hole_local = torch.as_tensor(
+            other_pose_np[:3, 3], dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, other_hole_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, other_hole_local
+        )
+        other_hole_opening_world = other_hole_world - axis_t_world * head_protrusion
+        line_dir = other_hole_opening_world - hole_opening_world
+        line_dir = line_dir / torch.norm(line_dir, dim=-1, keepdim=True).clamp(min=1e-6)
+        offset_center_world = hole_opening_world + line_dir * guess_offset_magnitude
+
+        # ==== Phase transitions ====
+        # Phase 1 (approach):  ~_xy_aligned                          → xy motion to offset_center
+        # Phase 2 (descent):    _xy_aligned & ~_search_active        → z descent to surface
+        # Phase 3 (search):     _search_active & ~_press_down        → xy spiral
+        # Phase 4 (press_down): _press_down                          → z descent into hole
+
+        # Peg position relative to offset_center, split into perp (xy) and along (z) components.
+        delta_to_offset = offset_center_world - peg_tip_world
+        along_to_offset = (delta_to_offset * axis_t_world).sum(-1, keepdim=True)
+        perp_to_offset = delta_to_offset - along_to_offset * axis_t_world
+        perp_dist_to_offset = torch.norm(perp_to_offset, dim=-1)
+        along_dist_to_offset = along_to_offset.squeeze(-1).abs()
+
+        # Phase 1 -> 2: rough xy alignment.
+        rough_xy_tol = 0.01   # 1 cm "差不多" tolerance
+        z_tol = 0.003         # 3 mm to declare "at surface"
+        self._xy_aligned_latched = self._xy_aligned_latched | (
+            perp_dist_to_offset < rough_xy_tol
+        )
+
+        # Phase 2 -> 3: peg has descended to the surface (z near offset_center.z).
+        self._search_active_latched = self._search_active_latched | (
+            self._xy_aligned_latched & (along_dist_to_offset < z_tol)
+        )
+
+        # Spiral step counter (Phase 3).
+        in_search_phase = self._search_active_latched & (~self._press_down_latched)
+        if bool(in_search_phase.any().item()):
+            self._search_step += 1
+
+        k = min(self._search_step, spiral_idx_max)
+        angle = k * spiral_angle_step
+        radius = k * spiral_radial_step
+        sx = radius * math.cos(angle)
+        sy = radius * math.sin(angle)
+        search_target = offset_center_world + sx * e1_world + sy * e2_world
+
+        # Phase 3 -> 4: PEG TIP (red) actually over the hole center.
+        delta_pt = peg_tip_world - hole_opening_world
+        along_pt = (delta_pt * axis_t_world).sum(-1, keepdim=True)
+        perp_pt = delta_pt - along_pt * axis_t_world
+        peg_to_hole_perp = torch.norm(perp_pt, dim=-1)
+        self._press_down_latched = self._press_down_latched | (
+            in_search_phase & (peg_to_hole_perp < press_detect_radius)
+        )
+
+        # ==== Target select ====
+        # Phase 1 + 2 share the offset_center target (filter will pick xy or z).
+        # Phase 3 uses spiral target. Phase 4 uses press_down target.
+        target = torch.where(
+            self._press_down_latched.unsqueeze(-1),
+            press_down_target,
+            torch.where(
+                in_search_phase.unsqueeze(-1),
+                search_target,
+                offset_center_world,
+            ),
+        )
+
+        # ==== Visualization (red = peg tip, green = real hole center) ====
+        self._visualize_tip_and_hole(peg_tip_world, hole_opening_world)
+
+        # ==== Compute action ====
+        delta = target - peg_tip_world
+        pos_action = delta / self.pos_threshold
+        pos_action = torch.clamp(pos_action, -1.0, 1.0)
+        pos_action = pos_action * descent_scale
+
+        # Per-phase axis filter:
+        # Phase 1 (approach)  → perp only (xy align)
+        # Phase 2 (descent)   → along only (drop to surface)
+        # Phase 3 (search)    → perp + small constant press to keep on surface
+        # Phase 4 (press)     → along only (descend into hole)
+        along_action = (pos_action * axis_t_world).sum(-1, keepdim=True) * axis_t_world
+        perp_action = pos_action - along_action
+
+        in_descent_phase = self._xy_aligned_latched & (~self._search_active_latched)
+        in_search_phase_for_press = self._search_active_latched & (~self._press_down_latched)
+        use_along = in_descent_phase | self._press_down_latched
+
+        # Constant small downward press during spiral to keep the peg pressed
+        # against the surface (prevents "lift-off" from contact dynamics).
+        search_press_action = (-axis_t_world) * search_press_magnitude
+        search_press_action = torch.where(
+            in_search_phase_for_press.unsqueeze(-1),
+            search_press_action,
+            torch.zeros_like(search_press_action),
+        )
+
+        pos_action = torch.where(
+            use_along.unsqueeze(-1),
+            along_action,
+            perp_action + search_press_action,
+        )
+
+        if self.joint_created:
+            pos_action = torch.zeros_like(pos_action)
+
+        rot_action = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action, rot_action, gripper_action], dim=-1)
+
+    def _scripted_action_rod_to_frame(self):
+        """Insert the rod's 2 lower holes onto the 2 already-seated plugs
+        (task_idx == 3). Mirror of chair1_env.py's _scripted_action_backrest_to_frame,
+        but with the rod's geometry (instead of the backrest).
+
+        Rod local hole positions are derived by transforming
+        `connection_cfg1.translation` and `connection_cfg2.translation` (plug
+        seated positions in chair-frame local) through `connection_cfg3.pose_to_base`
+        (rod seated pose in chair-frame local). With the plug-bbox-corner
+        correction:
+          plug1 axis → rod local (0.1916, 0.00955, -0.009)
+          plug2 axis → rod local (0.1916, 0.00955, -0.032)
+        Following backrest convention, x is flipped to 0 (the visible end of
+        the rod — the user-confirmed orientation). Flip back to 0.1916 if the
+        markers show up on the wrong end of the rod.
+        """
+        # ==== Rod's 2 hole openings in rod local frame ====
+        # x=0.1916 is the rod end where the seated plugs poke in (per cfg3
+        # projection math). Flip to 0.0 if the markers appear on the wrong end.
+        hole1_local = torch.tensor([0.1916, 0.00955, -0.009], device=self.device)
+        hole2_local = torch.tensor([0.1916, 0.00955, -0.032], device=self.device)
+        hole1_local = hole1_local.unsqueeze(0).repeat(self.num_envs, 1)
+        hole2_local = hole2_local.unsqueeze(0).repeat(self.num_envs, 1)
+
+        _, hole1_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, hole1_local
+        )
+        _, hole2_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, hole2_local
+        )
+        hole_mid_world = (hole1_world + hole2_world) / 2.0
+
+        # ==== The 2 plug-top centers in world ====
+        # Apply cfg.pose_to_base to plug_local_center (cylinder axis on the
+        # plug's top face). connection_cfg.translation is plug's USD origin
+        # (= bbox corner), not the cylinder axis.
+        plug_scale = float(self.cfg_task.plug1.spawn.scale[0])
+        plug_top_center_local = 0.004 * plug_scale  # 3 mm in plug local
+
+        def _peg_top_center_chair_local(cfg_pose_to_base_np):
+            R = cfg_pose_to_base_np[:3, :3]
+            t = cfg_pose_to_base_np[:3, 3]
+            offset_chair = R @ np.array([plug_top_center_local, plug_top_center_local, 0.0])
+            return t + offset_chair
+
+        peg1_chair_np = _peg_top_center_chair_local(self.cfg_task.connection_cfg1.pose_to_base)
+        peg2_chair_np = _peg_top_center_chair_local(self.cfg_task.connection_cfg2.pose_to_base)
+
+        peg1_chair_local = torch.as_tensor(
+            peg1_chair_np, dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        peg2_chair_local = torch.as_tensor(
+            peg2_chair_np, dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg1_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, peg1_chair_local
+        )
+        _, peg2_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, peg2_chair_local
+        )
+        peg_mid_world = (peg1_world + peg2_world) / 2.0
+
+        # ==== Insertion axis in world ====
+        axis_t_local = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, axis_t_local
+        )
+
+        # ==== Orthonormal perp-plane basis (for spiral) ====
+        ref = torch.tensor([1.0, 0.0, 0.0], device=self.device).expand_as(axis_t_local)
+        parallel = (axis_t_local * ref).sum(-1, keepdim=True).abs() > 0.9
+        ref = torch.where(
+            parallel,
+            torch.tensor([0.0, 0.0, 1.0], device=self.device).expand_as(axis_t_local),
+            ref,
+        )
+        e1_local = torch.cross(axis_t_local, ref, dim=-1)
+        e1_local = e1_local / torch.norm(e1_local, dim=-1, keepdim=True).clamp(min=1e-6)
+        e2_local = torch.cross(axis_t_local, e1_local, dim=-1)
+        e2_local = e2_local / torch.norm(e2_local, dim=-1, keepdim=True).clamp(min=1e-6)
+        _, e1_world = torch_utils.tf_combine(self.fixed_quat, zero_t, self.identity_quat, e1_local)
+        _, e2_world = torch_utils.tf_combine(self.fixed_quat, zero_t, self.identity_quat, e2_local)
+
+        # ==== Four-phase targets ====
+        # Phase 1 hover:   peg_mid + axis_t * descent_clearance + perp_offset
+        # Phase 2 descend: peg_mid + perp_offset (at peg level)
+        # Phase 3 search:  peg_mid + stalled_perp + spiral_offset
+        # Phase 4 press:   peg_mid - axis_t * seating_depth
+        descent_clearance = 0.025
+        rod_seating_depth = 0.0084          # plug head protrudes 8.4 mm into rod (tune if rod thickness differs)
+        guess_offset_magnitude = 0.003      # 5 mm perp offset (forces a stall→search)
+        offset_perp_world = e1_world * guess_offset_magnitude
+
+        hover_target = peg_mid_world + axis_t_world * descent_clearance + offset_perp_world
+        descend_target = peg_mid_world + offset_perp_world
+        press_down_target = peg_mid_world - axis_t_world * rod_seating_depth
+
+        # ==== Trigger parameters ====
+        near_radius = 0.005
+        dwell_to_descend = 5
+        z_progress_eps = 1e-4
+        stall_frames_thresh = 10
+        spiral_angle_step = math.pi / 12
+        spiral_radial_step = 0.0001
+        press_detect_radius = 0.0015
+        spiral_idx_max = 300
+
+        # Phase 1 -> 2: hole_mid near hover_target for dwell frames.
+        mid_to_hover = torch.norm(hover_target - hole_mid_world, dim=-1)
+        near_hover = mid_to_hover < near_radius
+        self._near_hole_frames = torch.where(
+            near_hover,
+            self._near_hole_frames + 1,
+            torch.zeros_like(self._near_hole_frames),
+        )
+        self._descend_latched = self._descend_latched | (
+            self._near_hole_frames >= dwell_to_descend
+        )
+
+        # Stall detection (during descend only).
+        curr_along = (hole_mid_world * axis_t_world).sum(-1)
+        descending = (
+            self._descend_latched
+            & (~self._search_active_latched)
+            & (~self._press_down_latched)
+        )
+        along_drop = self._prev_held_z - curr_along
+        prev_valid = ~torch.isnan(self._prev_held_z)
+        stalled = descending & prev_valid & (along_drop < z_progress_eps)
+        self._stuck_frames = torch.where(
+            stalled,
+            self._stuck_frames + 1,
+            torch.zeros_like(self._stuck_frames),
+        )
+        self._prev_held_z = torch.where(
+            descending, curr_along, torch.full_like(curr_along, float("nan"))
+        )
+
+        # Phase 2 -> 3: stall threshold → latch search, snapshot spiral center.
+        just_search_latched = (~self._search_active_latched) & (
+            self._stuck_frames >= stall_frames_thresh
+        )
+        if bool(just_search_latched.any().item()):
+            delta_now = hole_mid_world - peg_mid_world
+            along_now = (delta_now * axis_t_world).sum(-1, keepdim=True)
+            perp_now = delta_now - along_now * axis_t_world
+            self._search_center_perp = torch.where(
+                just_search_latched.unsqueeze(-1),
+                perp_now,
+                self._search_center_perp,
+            )
+        self._search_active_latched = self._search_active_latched | (
+            self._stuck_frames >= stall_frames_thresh
+        )
+
+        # Spiral step counter.
+        in_search_phase = self._search_active_latched & (~self._press_down_latched)
+        if bool(in_search_phase.any().item()):
+            self._search_step += 1
+
+        # Angle keeps growing without bound; radius caps at `spiral_idx_max`
+        # so once the spiral reaches max radius it just orbits at that radius
+        # indefinitely until red/green markers align.
+        radius_k = min(self._search_step, spiral_idx_max)
+        angle = self._search_step * spiral_angle_step
+        radius = radius_k * spiral_radial_step
+        sx = radius * math.cos(angle)
+        sy = radius * math.sin(angle)
+        spiral_offset_world = sx * e1_world + sy * e2_world
+
+        # Tap-tap rhythm during search: every `tap_period` frames, alternate
+        # between LIFTED (a few mm above the surface) and DOWN (on the
+        # surface). Helps the long rod avoid dragging while xy spirals.
+        tap_period = 30           # frames for a full lift-down cycle
+        tap_half = tap_period // 2
+        tap_lift_amount = 0.005   # 5 mm lift during the up half-cycle
+        tap_phase = self._search_step % tap_period
+        tap_lift = tap_lift_amount if tap_phase < tap_half else 0.0
+        search_target = (
+            peg_mid_world
+            + self._search_center_perp
+            + spiral_offset_world
+            + axis_t_world * tap_lift
+        )
+
+        # Phase 3 -> 4: trigger press_down only when the ACTUAL hole_mid (red
+        # midpoint, in physics) lines up with peg_mid (green midpoint) in the
+        # perp plane. Using the commanded spiral target instead would fire too
+        # early (the rod lags the commanded target due to PD tracking).
+        delta_pm = hole_mid_world - peg_mid_world
+        along_pm = (delta_pm * axis_t_world).sum(-1, keepdim=True)
+        perp_pm = delta_pm - along_pm * axis_t_world
+        rod_to_peg_perp = torch.norm(perp_pm, dim=-1)
+        self._press_down_latched = self._press_down_latched | (
+            in_search_phase & (rod_to_peg_perp < press_detect_radius)
+        )
+
+        # Four-way target select.
+        target = torch.where(
+            self._press_down_latched.unsqueeze(-1),
+            press_down_target,
+            torch.where(
+                self._search_active_latched.unsqueeze(-1),
+                search_target,
+                torch.where(
+                    self._descend_latched.unsqueeze(-1),
+                    descend_target,
+                    hover_target,
+                ),
+            ),
+        )
+
+        # ==== Visualization ====
+        self._visualize_rod_alignment(
+            hole1_world, hole2_world, peg1_world, peg2_world, hole_mid_world, target
+        )
+
+        # ==== Apply delta ====
+        delta = target - hole_mid_world
+        pos_action = delta / self.pos_threshold
+        pos_action = torch.clamp(pos_action, -1.0, 1.0)
+
+        # Slow the initial descent (×0.3 between hover-dwell and stall/search).
+        in_descend_phase = (
+            self._descend_latched
+            & (~self._search_active_latched)
+            & (~self._press_down_latched)
+        )
+        descend_scale = torch.where(
+            in_descend_phase.unsqueeze(-1),
+            torch.full_like(pos_action, 0.3),
+            torch.ones_like(pos_action),
+        )
+        pos_action = pos_action * descend_scale
+
+        if self.joint_created:
+            pos_action = torch.zeros_like(pos_action)
+
+        rot_action = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action, rot_action, gripper_action], dim=-1)
+
+    def _visualize_rod_alignment(self, hole1, hole2, peg1, peg2,
+                                  hole_mid, target_mid):
+        """Draw the 2 hole-peg pairs (red↔green) plus the mid-to-target arrow."""
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        self._dbg_draw.clear_points()
+        self._dbg_draw.clear_lines()
+
+        env_origin = self.scene.env_origins[0]
+
+        def to_tuple(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        h1 = to_tuple(hole1[0])
+        h2 = to_tuple(hole2[0])
+        g1 = to_tuple(peg1[0])
+        g2 = to_tuple(peg2[0])
+        m_red = to_tuple(hole_mid[0])
+        m_green = to_tuple(target_mid[0])
+
+        self._dbg_draw.draw_points(
+            [h1, h2, g1, g2, m_red, m_green],
+            [
+                (1.0, 0.0, 0.0, 1.0),
+                (1.0, 0.0, 0.0, 1.0),
+                (0.0, 1.0, 0.0, 1.0),
+                (0.0, 1.0, 0.0, 1.0),
+                (1.0, 0.5, 0.0, 1.0),
+                (0.0, 1.0, 1.0, 1.0),
+            ],
+            [22.0, 22.0, 22.0, 22.0, 14.0, 14.0],
+        )
+        self._dbg_draw.draw_lines(
+            [h1, h2, m_red],
+            [g1, g2, m_green],
+            [
+                (1.0, 1.0, 0.0, 1.0),
+                (1.0, 1.0, 0.0, 1.0),
+                (1.0, 0.5, 0.0, 1.0),
+            ],
+            [3.0, 3.0, 2.0],
+        )
+
+    def _scripted_action_plug_to_rod(self):
+        """Plug → rod top hole (chair2 idx 4/5) — mirror of chair1_env.py's
+        _scripted_action_plug_to_backrest, but with chair2's rod geometry.
+
+        Flow: approach an offset 5 mm along the two-hole line → dwell →
+        spiral outward → trigger press_down when the REAL peg tip passes
+        over the hole center → plug descends → joint_created.
+
+        Geometry differences:
+          - cfg4/5.pose_to_base.y = 0.236, rod top in chair y = 0.229
+            → head_protrusion = 7 mm (vs 9.06 mm for chair1 backrest)
+          - Same plug + same axis_t direction, so all other math identical.
+        """
+        # ==== Tunables ====
+        head_protrusion = 0.007            # plug origin overshoot above rod top
+        plug_usd_length = 0.029
+        plug_scale = float(self.cfg_task.plug1.spawn.scale[2])
+        plug_axis_center_local = 0.004 * plug_scale  # plug bbox corner → cylinder axis
+        guess_offset_magnitude = 0.003     # 5 mm along the two-hole line
+        near_radius = 0.005                # dwell radius for offset_center
+        dwell_to_search = 5                # frames near offset before search latches
+        spiral_angle_step = math.pi / 12   # 15°/step (24 per turn)
+        spiral_radial_step = 0.0001        # 0.1 mm/step (2.4 mm/turn)
+        press_detect_radius = 0.0015       # 1.5 mm trigger threshold (perp plane)
+        spiral_idx_max = 300
+        descent_scale = 0.3                # slow descent factor
+
+        # ==== Peg lower tip in world (cylinder center) ====
+        tip_offset_local = torch.zeros((self.num_envs, 3), device=self.device)
+        tip_offset_local[:, 0] = plug_axis_center_local
+        tip_offset_local[:, 1] = plug_axis_center_local
+        tip_offset_local[:, 2] = -plug_usd_length * plug_scale
+        _, peg_tip_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, tip_offset_local
+        )
+
+        # ==== Hole center in world (corrected for plug bbox-corner origin) ====
+        pose_to_base = torch.as_tensor(
+            self._connection_cfg.pose_to_base, dtype=torch.float32, device=self.device
+        )
+        cfg_R = pose_to_base[:3, :3]
+        cfg_t = pose_to_base[:3, 3]
+        axis_center_chair = cfg_R @ torch.tensor(
+            [plug_axis_center_local, plug_axis_center_local, 0.0],
+            dtype=torch.float32, device=self.device,
+        )
+        hole_pos_local = (cfg_t + axis_center_chair).unsqueeze(0).repeat(self.num_envs, 1)
+        _, hole_pos_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, hole_pos_local
+        )
+        axis_t_local = torch.as_tensor(
+            self._connection_cfg.axis_t, dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world = torch_utils.tf_combine(
+            self.fixed_quat, zero_t, self.identity_quat, axis_t_local
+        )
+        hole_opening_world = hole_pos_world - axis_t_world * head_protrusion
+        press_down_target = hole_pos_world - axis_t_world * (plug_usd_length * plug_scale)
+
+        # ==== Perp-plane basis for the spiral ====
+        ref = torch.tensor([1.0, 0.0, 0.0], device=self.device).expand_as(axis_t_local)
+        parallel = (axis_t_local * ref).sum(-1, keepdim=True).abs() > 0.9
+        ref = torch.where(
+            parallel,
+            torch.tensor([0.0, 0.0, 1.0], device=self.device).expand_as(axis_t_local),
+            ref,
+        )
+        e1_local = torch.cross(axis_t_local, ref, dim=-1)
+        e1_local = e1_local / torch.norm(e1_local, dim=-1, keepdim=True).clamp(min=1e-6)
+        e2_local = torch.cross(axis_t_local, e1_local, dim=-1)
+        e2_local = e2_local / torch.norm(e2_local, dim=-1, keepdim=True).clamp(min=1e-6)
+        _, e1_world = torch_utils.tf_combine(self.fixed_quat, zero_t, self.identity_quat, e1_local)
+        _, e2_world = torch_utils.tf_combine(self.fixed_quat, zero_t, self.identity_quat, e2_local)
+
+        # ==== Offset start point — 5 mm along the line to the OTHER rod hole ====
+        if self.cfg_task.task_idx == 4:
+            other_pose_np = self.cfg_task.connection_cfg5.pose_to_base
+        else:
+            other_pose_np = self.cfg_task.connection_cfg4.pose_to_base
+        other_hole_local = torch.as_tensor(
+            other_pose_np[:3, 3], dtype=torch.float32, device=self.device
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, other_hole_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, other_hole_local
+        )
+        other_hole_opening_world = other_hole_world - axis_t_world * head_protrusion
+        line_dir = other_hole_opening_world - hole_opening_world
+        line_dir = line_dir / torch.norm(line_dir, dim=-1, keepdim=True).clamp(min=1e-6)
+        offset_center_world = hole_opening_world + line_dir * guess_offset_magnitude
+
+        # ==== Phase 1 -> 2: tip near offset_center for dwell_to_search frames ====
+        tip_to_offset = torch.norm(offset_center_world - peg_tip_world, dim=-1)
+        near_offset = tip_to_offset < near_radius
+        self._near_hole_frames = torch.where(
+            near_offset,
+            self._near_hole_frames + 1,
+            torch.zeros_like(self._near_hole_frames),
+        )
+        self._search_active_latched = self._search_active_latched | (
+            self._near_hole_frames >= dwell_to_search
+        )
+
+        # ==== Spiral step ====
+        in_search_phase = self._search_active_latched & (~self._press_down_latched)
+        if bool(in_search_phase.any().item()):
+            self._search_step += 1
+
+        k = min(self._search_step, spiral_idx_max)
+        angle = k * spiral_angle_step
+        radius = k * spiral_radial_step
+        sx = radius * math.cos(angle)
+        sy = radius * math.sin(angle)
+        search_target = offset_center_world + sx * e1_world + sy * e2_world
+
+        # ==== Phase 2 -> 3: REAL peg tip (red) over the hole center ====
+        # Use real peg position (not commanded target) so press_down fires
+        # only after the peg has actually caught up.
+        delta_pt = peg_tip_world - hole_opening_world
+        along_pt = (delta_pt * axis_t_world).sum(-1, keepdim=True)
+        perp_pt = delta_pt - along_pt * axis_t_world
+        peg_to_hole_perp = torch.norm(perp_pt, dim=-1)
+        self._press_down_latched = self._press_down_latched | (
+            in_search_phase & (peg_to_hole_perp < press_detect_radius)
+        )
+
+        # ==== Target select ====
+        target = torch.where(
+            self._press_down_latched.unsqueeze(-1),
+            press_down_target,
+            torch.where(
+                in_search_phase.unsqueeze(-1),
+                search_target,
+                offset_center_world,
+            ),
+        )
+
+        # ==== Visualization (red = peg tip, green = real hole center) ====
+        self._visualize_tip_and_hole(peg_tip_world, hole_opening_world)
+
+        # ==== Compute action ====
+        delta = target - peg_tip_world
+        pos_action = delta / self.pos_threshold
+        pos_action = torch.clamp(pos_action, -1.0, 1.0)
+        pos_action = pos_action * descent_scale
+
+        if self.joint_created:
+            pos_action = torch.zeros_like(pos_action)
+
+        rot_action = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action, rot_action, gripper_action], dim=-1)
 
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
@@ -473,7 +1196,12 @@ class FrankaChair2Env(DirectRLEnv):
         # self.actions = (
         #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
         # )
-        self.actions = action.clone()
+        # idx 1/2 use scripted plug-to-hole policy; other task_idx keep RL action.
+        scripted = self._compute_scripted_action()
+        if scripted is not None:
+            self.actions = scripted
+        else:
+            self.actions = action.clone()
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
@@ -716,6 +1444,16 @@ class FrankaChair2Env(DirectRLEnv):
         super()._reset_idx(env_ids)
         print("Resetting envs:", env_ids)
         self._remove_fixed_joint()
+        # Reset scripted-policy state.
+        self._near_hole_frames.zero_()
+        self._xy_aligned_latched.zero_()
+        self._search_active_latched.zero_()
+        self._search_step = 0
+        self._press_down_latched.zero_()
+        self._descend_latched.zero_()
+        self._prev_held_z.fill_(float("nan"))
+        self._stuck_frames.zero_()
+        self._search_center_perp.zero_()
         self._set_assets_to_default_pose(env_ids)
         self._set_franka_to_default_pose(joints=self.cfg.ctrl.reset_joints, env_ids=env_ids)
         self.step_sim_no_action()

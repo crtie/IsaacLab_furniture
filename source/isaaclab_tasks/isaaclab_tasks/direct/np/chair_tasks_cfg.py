@@ -104,6 +104,7 @@ class ChairFrame(FixedAssetCfg):
     height = 0.025
     mass = 0.05
     base_height = 0.0
+    friction = 0.0  # smooth surface so the scripted grid-search slides over the hole rim
 
 @configclass
 class ChairFrameBack(FixedAssetCfg):
@@ -190,7 +191,7 @@ class ChairAssembly1(FactoryTask):
     #! crtie: task 3 is "insert the backrest into the frame via the plug",
     #! crtie: task 4 is "insert the plug1 into the backrest".
     #! crtie: task 5 is "insert the plug2 into the backrest".
-    task_idx = 3
+    task_idx = 2
 
 
     name = "chair_assembly"
@@ -662,7 +663,7 @@ class ChairAssembly3(FactoryTask):
     #! crtie: task 3 is "insert the rod into the frame via the plug",
     #! crtie: task 4 is "insert the plug1 into the rod".
     #! crtie: task 5 is "insert the plug2 into the rod".
-    task_idx = 3
+    task_idx = 5
 
 
     name = "chair_assembly"
@@ -1008,7 +1009,7 @@ class ChairAssembly5(FactoryTask):
     #! crtie: task 2 is "the second screw",
     #! crtie: task 3 is "the third screw"
 
-    task_idx = 3
+    task_idx = 1
 
 
     name = "chair_assembly"

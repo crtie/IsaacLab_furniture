@@ -1,4 +1,5 @@
 # Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
@@ -147,6 +148,16 @@ class FrankaLego1Env(DirectRLEnv):
 
         self.ep_succeeded = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
         self.ep_success_times = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+
+        # Scripted-policy state for lego1 idx=1 (hand peg ↦ arm hole).
+        # STRICTLY independent — every tensor carries `_l1_1` suffix.
+        self._xy_align_frames_l1_1     = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._xy_aligned_latched_l1_1  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._near_hover_frames_l1_1   = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._press_down_latched_l1_1  = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)
+        self._prev_along_l1_1          = torch.zeros((self.num_envs,), device=self.device)
+        self._stall_frames_l1_1        = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        self._wobble_step_l1_1         = 0
 
     def _get_keypoint_offsets(self, num_keypoints):
         """Get uniformly-spaced keypoints along a line of unit length, centered at 0."""
@@ -424,9 +435,157 @@ class FrankaLego1Env(DirectRLEnv):
         indices = torch.zeros_like(all_envs)
         self.visualization_markers.visualize(loc, rots, marker_indices=indices)
 
+    # ------------------------------------------------------------------
+    # lego1 idx=1 — hand peg (HELD) ↦ arm hole (FIXED)
+    # ------------------------------------------------------------------
+    # STRICT independence: every name carries the `_l1_1` suffix.
+    # Offline mesh analysis (DBSCAN ring detection):
+    #   hand.obj   — peg tip at held_local UNSCALED ≈ (0, -0.007, -0.088).
+    #                held_scale = (0.85, 0.85, 1.0).
+    #   arm.obj    — z-axis hole at fixed_local UNSCALED (-0.017, +0.019,
+    #                +0.016). fixed_scale = 1.0.
+    L1_1_PEG_LOCAL    = (0.0, -0.007, -0.088)    # hand peg tip CENTER (held_local UNSCALED)
+    L1_1_PEG_SCALE    = (0.85, 0.85, 1.0)
+    # 3D PCA ring detection on arm.obj found a TILTED through-hole at
+    # fixed_local (+0.0201, -0.0561, -0.0338) with normal direction
+    # (-0.007, -0.715, -0.699) — roughly 45° between -y and -z. The
+    # ring radius is 0.020 m with 1067 vertices, planarity 0.07 (very flat).
+    L1_1_HOLE_LOCAL   = (+0.0201, -0.0561, -0.0338)  # tilted hole CENTER in fixed_local UNSCALED
+    L1_1_HOLE_SCALE   = (1.0, 1.0, 1.0)
+    # Hole axis in fixed_local — peg should travel ALONG this direction
+    # to enter (peg approaches from outside, so axis_t points OUTWARD
+    # = direction the hole "opens up to free space"). The ring normal
+    # is (-0.007, -0.715, -0.699); use the negated form so axis_t points
+    # toward the hole's entry side (which is on the outside-of-arm side).
+    L1_1_HOLE_AXIS_LOCAL = (+0.007, +0.715, +0.699)  # entry direction in fixed_local
+
+    def _visualize_peg_and_hole_l1_1(self):
+        """Draw GREEN = hand peg tip CENTER, RED = arm hole entry CENTER.
+        Single line connecting them shows current xy/z error."""
+        if not hasattr(self, "_dbg_draw"):
+            try:
+                from isaacsim.util.debug_draw import _debug_draw
+            except ImportError:
+                from omni.isaac.debug_draw import _debug_draw
+            self._dbg_draw = _debug_draw.acquire_debug_draw_interface()
+
+        if not getattr(self, "_l1_1_legend_printed", False):
+            print("\n[lego1 idx=1] viewer legend (peg-into-hole):")
+            print(f"  GREEN dot = hand peg tip CENTER  held_local {self.L1_1_PEG_LOCAL}  × {self.L1_1_PEG_SCALE}")
+            print(f"  RED   dot = arm hole entry CENTER fixed_local {self.L1_1_HOLE_LOCAL} × {self.L1_1_HOLE_SCALE}")
+            self._l1_1_legend_printed = True
+
+        peg_local = torch.tensor(
+            [self.L1_1_PEG_LOCAL[0] * self.L1_1_PEG_SCALE[0],
+             self.L1_1_PEG_LOCAL[1] * self.L1_1_PEG_SCALE[1],
+             self.L1_1_PEG_LOCAL[2] * self.L1_1_PEG_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_world = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, peg_local
+        )
+        hole_local = torch.tensor(
+            [self.L1_1_HOLE_LOCAL[0] * self.L1_1_HOLE_SCALE[0],
+             self.L1_1_HOLE_LOCAL[1] * self.L1_1_HOLE_SCALE[1],
+             self.L1_1_HOLE_LOCAL[2] * self.L1_1_HOLE_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, hole_world = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, hole_local
+        )
+
+        env_origin = self.scene.env_origins[0]
+
+        def _to_tuple(t):
+            v = (t + env_origin).detach().cpu().numpy()
+            return (float(v[0]), float(v[1]), float(v[2]))
+
+        g = _to_tuple(peg_world[0])
+        r = _to_tuple(hole_world[0])
+        self._dbg_draw.clear_points()
+        self._dbg_draw.clear_lines()
+        self._dbg_draw.draw_points(
+            [g, r],
+            [(0.0, 1.0, 0.0, 1.0), (1.0, 0.0, 0.0, 1.0)],
+            [22.0, 22.0],
+        )
+        self._dbg_draw.draw_lines([g], [r], [(1.0, 1.0, 0.0, 1.0)], [3.0])
+
+    def _scripted_action_peg_insert_l1_1(self):
+        """lego1 idx=1 — two-phase:
+        Phase 1: drive GREEN (peg tip) straight to RED (hole center).
+        Phase 2 (latched once arrived): push along -axis_t to insert."""
+        arrive_tol_l1_1   = 0.005   # 5 mm — switch to insert phase
+        press_depth_l1_1  = 0.20
+        move_scale_l1_1   = 0.3
+
+        peg_local_l1_1 = torch.tensor(
+            [self.L1_1_PEG_LOCAL[0] * self.L1_1_PEG_SCALE[0],
+             self.L1_1_PEG_LOCAL[1] * self.L1_1_PEG_SCALE[1],
+             self.L1_1_PEG_LOCAL[2] * self.L1_1_PEG_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, peg_world_l1_1 = torch_utils.tf_combine(
+            self.held_quat, self.held_pos, self.identity_quat, peg_local_l1_1
+        )
+        hole_local_l1_1 = torch.tensor(
+            [self.L1_1_HOLE_LOCAL[0] * self.L1_1_HOLE_SCALE[0],
+             self.L1_1_HOLE_LOCAL[1] * self.L1_1_HOLE_SCALE[1],
+             self.L1_1_HOLE_LOCAL[2] * self.L1_1_HOLE_SCALE[2]],
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        _, hole_world_l1_1 = torch_utils.tf_combine(
+            self.fixed_quat, self.fixed_pos, self.identity_quat, hole_local_l1_1
+        )
+
+        axis_t_local_l1_1 = torch.tensor(
+            list(self.L1_1_HOLE_AXIS_LOCAL),
+            dtype=torch.float32, device=self.device,
+        ).unsqueeze(0).repeat(self.num_envs, 1)
+        zero_t_l1_1 = torch.zeros_like(self.fixed_pos)
+        _, axis_t_world_l1_1 = torch_utils.tf_combine(
+            self.fixed_quat, zero_t_l1_1, self.identity_quat, axis_t_local_l1_1
+        )
+        axis_t_world_l1_1 = axis_t_world_l1_1 / axis_t_world_l1_1.norm(
+            dim=-1, keepdim=True
+        ).clamp(min=1e-8)
+
+        # Latch phase-2 once we've ever arrived at the hole center.
+        dist_l1_1 = (hole_world_l1_1 - peg_world_l1_1).norm(dim=-1)
+        arrived_now_l1_1 = dist_l1_1 < arrive_tol_l1_1
+        self._press_down_latched_l1_1 = self._press_down_latched_l1_1 | arrived_now_l1_1
+
+        # Phase-1 target = hole center; Phase-2 target = past hole along +axis_t.
+        insert_target_l1_1 = hole_world_l1_1 + axis_t_world_l1_1 * press_depth_l1_1
+        target_l1_1 = torch.where(
+            self._press_down_latched_l1_1.unsqueeze(-1),
+            insert_target_l1_1,
+            hole_world_l1_1,
+        )
+
+        delta_l1_1      = target_l1_1 - peg_world_l1_1
+        pos_action_l1_1 = delta_l1_1 / self.pos_threshold
+        pos_action_l1_1 = torch.clamp(pos_action_l1_1, -1.0, 1.0) * move_scale_l1_1
+
+        phase_l1_1 = "INSERT" if bool(self._press_down_latched_l1_1[0]) else "APPROACH"
+        d_l1_1 = (hole_world_l1_1 - peg_world_l1_1)[0]
+        print(
+            f"[l1_1] {phase_l1_1}  "
+            f"dx={float(d_l1_1[0])*1000:+.2f}mm "
+            f"dy={float(d_l1_1[1])*1000:+.2f}mm "
+            f"dz={float(d_l1_1[2])*1000:+.2f}mm "
+            f"dist={float(dist_l1_1[0])*1000:.2f}mm"
+        )
+
+        rot_action_l1_1     = torch.zeros((self.num_envs, 3), device=self.device)
+        gripper_action_l1_1 = torch.ones((self.num_envs, 1), device=self.device)
+        return torch.cat([pos_action_l1_1, rot_action_l1_1, gripper_action_l1_1], dim=-1)
+
     def _pre_physics_step(self, action):
         """Apply policy actions with smoothing."""
         self._visualize_markers()
+        if self.cfg_task.task_idx == 1:
+            self._visualize_peg_and_hole_l1_1()
         self._check_attach_condition()
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
@@ -435,7 +594,10 @@ class FrankaLego1Env(DirectRLEnv):
         # self.actions = (
         #     self.cfg.ctrl.ema_factor * action.clone().to(self.device) + (1 - self.cfg.ctrl.ema_factor) * self.actions
         # )
-        self.actions = action.clone()
+        if self.cfg_task.task_idx == 1:
+            self.actions = self._scripted_action_peg_insert_l1_1()
+        else:
+            self.actions = action.clone()
 
     def close_gripper_in_place(self):
         """Keep gripper in current position as gripper closes."""
@@ -678,6 +840,17 @@ class FrankaLego1Env(DirectRLEnv):
         super()._reset_idx(env_ids)
         print("Resetting envs:", env_ids)
         self._remove_fixed_joint()
+
+        # Reset scripted-policy state for lego1 idx=1 (independent —
+        # only zeroes the `_l1_1` tensors, no overlap with anything else).
+        self._xy_align_frames_l1_1.zero_()
+        self._xy_aligned_latched_l1_1.zero_()
+        self._near_hover_frames_l1_1.zero_()
+        self._press_down_latched_l1_1.zero_()
+        self._prev_along_l1_1.zero_()
+        self._stall_frames_l1_1.zero_()
+        self._wobble_step_l1_1 = 0
+
         self._set_assets_to_default_pose(env_ids)
         self._set_franka_to_default_pose(joints=self.cfg.ctrl.reset_joints, env_ids=env_ids)
         self.step_sim_no_action()
