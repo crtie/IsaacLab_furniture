@@ -1,0 +1,399 @@
+{
+  "schema_version": 1,
+  "generated_date": "2026-07-14",
+  "repository": "/home/CNS2025331827/docs/IsaacLab_furniture0",
+  "unique_experiment_count": 9,
+  "reproduction_handoff_count": 1,
+  "counting_rule": "A parameter-tuning family is one experiment series; byte-identical delivery mirrors and replay-only handoffs are not counted again.",
+  "current_physical_completion": {
+    "physical_grasp_success": false,
+    "physical_lift_success": false,
+    "preinsert_success": false,
+    "physical_insert_success": false,
+    "release_stable": false
+  },
+  "canonical_baseline": {
+    "documented_path": "debug_runs/full_oracle_sticky_assembly_pipeline",
+    "present_during_audit": false,
+    "classification": "VISUAL_ORACLE_STICKY_BASELINE_NOT_PHYSICAL",
+    "note": "AGENTS.md defines this path as canonical, but it was absent during the read-only audit. This task did not delete, move, restore, or replace it."
+  },
+  "experiments": [
+    {
+      "experiment_id": "EXP-01",
+      "name": "Screw1 v2 baseline and seed-replay diagnostics",
+      "primary_path": "debug_runs/screw1_grasp_baseline_v2*",
+      "mirror_paths": [],
+      "object": ["Screw1"],
+      "strategy": "Frozen acquisition plans, wrist/action authority probes, contact handoff and dual-contact regulator variants",
+      "candidate_budget": {"variant_directories": 45, "search_budget": null},
+      "actual_physics_resets": null,
+      "reset_count_note": "The 45 historical variant directories do not expose one trustworthy aggregate reset count.",
+      "deepest_stage": "PRECONTACT_OR_SINGLE_CONTACT_DIAGNOSTIC",
+      "milestones": {
+        "target_contact": "PARTIAL_OR_UNSTABLE",
+        "physical_lift": "NOT_REACHED",
+        "preinsert": "NOT_RUN",
+        "insert": "NOT_RUN",
+        "release": "NOT_RUN"
+      },
+      "final_classification": "HISTORICAL_DIAGNOSTIC_FAMILY_NO_PHYSICAL_LIFT",
+      "direct_failure_reason": "No repeatable safe dual target contact progressed into close and lift.",
+      "root_causes": [
+        {
+          "cause": "The baseline remained in acquisition/contact-handoff diagnostics rather than a repeatable grasp state.",
+          "evidence_level": "CONFIRMED"
+        },
+        {
+          "cause": "The total number of fresh resets across all variants cannot be reconstructed from the available summaries.",
+          "evidence_level": "UNKNOWN"
+        }
+      ],
+      "ruled_out": ["26D action authority and runtime joint ordering were exercised in dedicated variants."],
+      "cannot_prove": ["Mechanical infeasibility of Screw1", "Repeatable dual contact", "Any physical lift"],
+      "lesson": "Do not treat near-bank or contact-handoff diagnostics as grasp evidence; require an aggregate run contract before creating many variants.",
+      "source_entrypoints": ["scripts/environments/run_v95_scripted_contact_baseline.py"],
+      "evidence_files": [
+        "debug_runs/screw1_grasp_baseline_v2_seed_replay_verified_corridor_smoke/v2_summary.json",
+        "docs/s2t1_floatwuji_experiment_index.md"
+      ]
+    },
+    {
+      "experiment_id": "EXP-02",
+      "name": "Morphology-aware contact-adaptive Screw1 closure",
+      "primary_path": "debug_runs/contact_adaptive_screw1_grasp_caging_fix",
+      "mirror_paths": [],
+      "object": ["Screw1"],
+      "strategy": "Other-hand timing prior, 40-probe Wuji morphology calibration, frozen caging replay and synergy closure",
+      "candidate_budget": {"morphology_probes": 40, "a_trials": 3, "b_compatibility_trials": 3, "b_closure_trials": 1},
+      "actual_physics_resets": 47,
+      "reset_count_note": "40 calibration probes plus 7 reported A/B trials; calibration resets are diagnostics, not grasp candidates.",
+      "deepest_stage": "PRECONTACT_CLOSURE",
+      "milestones": {
+        "target_contact": "SINGLE_FINGER_ONLY",
+        "physical_lift": "NOT_REACHED",
+        "preinsert": "NOT_RUN",
+        "insert": "NOT_RUN",
+        "release": "NOT_RUN"
+      },
+      "final_classification": "OBJECT_SPEC_INTERFACE_INSUFFICIENT",
+      "direct_failure_reason": "The nominal distal-joint synergy reached guarded non-target contact before dual Screw1 contact.",
+      "root_causes": [
+        {
+          "cause": "Pre-contact motion did not consume the calibrated fingertip effect matrix and produced no dual target contact.",
+          "evidence_level": "CONFIRMED"
+        }
+      ],
+      "ruled_out": ["Basic 20-joint action propagation", "Gross morphology effect-matrix rank failure"],
+      "cannot_prove": ["Which non-target body caused the residual contact without actor-pair evidence", "Physical grasp or lift"],
+      "lesson": "A transferable timing prior does not define object-relative contact geometry or a viable approach path.",
+      "source_entrypoints": ["scripts/environments/run_v95_scripted_contact_baseline.py"],
+      "evidence_files": [
+        "debug_runs/contact_adaptive_screw1_grasp_caging_fix/report.md",
+        "debug_runs/contact_adaptive_screw1_grasp_caging_fix/contact_adaptive_summary.json"
+      ]
+    },
+    {
+      "experiment_id": "EXP-03",
+      "name": "Screw1 object-relative pre-contact Jacobian recovery",
+      "primary_path": "debug_runs/contact_adaptive_screw1_object_relative_precontact",
+      "mirror_paths": [],
+      "object": ["Screw1"],
+      "strategy": "Frozen replay followed by endpoint 6x8 local active Jacobian calibration and guarded DLS eligibility",
+      "candidate_budget": {"development_trials": 1, "signed_joint_probes": 16},
+      "actual_physics_resets": 1,
+      "deepest_stage": "LOCAL_JACOBIAN_CALIBRATION",
+      "milestones": {
+        "target_contact": "NOT_ACQUIRED",
+        "physical_lift": "NOT_REACHED",
+        "preinsert": "NOT_RUN",
+        "insert": "NOT_RUN",
+        "release": "NOT_RUN"
+      },
+      "final_classification": "MORPHOLOGY_EFFECT_MODEL_INVALID_AT_PREGRASP",
+      "direct_failure_reason": "Joint and fingertip restore errors exceeded the repeatability gates, so the measured Jacobian was not used.",
+      "root_causes": [
+        {
+          "cause": "The matrix was rank 6 and well conditioned, but endpoint restore error was 0.000725 rad and 1.068 mm.",
+          "evidence_level": "CONFIRMED"
+        }
+      ],
+      "ruled_out": ["Structural rank deficiency of the measured 6x8 matrix", "Large object motion during calibration"],
+      "cannot_prove": ["Whether slower transactional restore would make the controller usable", "Screw1 grasp feasibility"],
+      "lesson": "Validate repeated common endpoints before interpreting a local Jacobian as a runtime controller model.",
+      "source_entrypoints": ["scripts/environments/run_v95_scripted_contact_baseline.py"],
+      "evidence_files": [
+        "debug_runs/contact_adaptive_screw1_object_relative_precontact/report.md",
+        "debug_runs/contact_adaptive_screw1_object_relative_precontact/local_active_jacobian_trial_0_r0.json"
+      ]
+    },
+    {
+      "experiment_id": "EXP-04",
+      "name": "Screw1 vectorized near-grasp CEM",
+      "primary_path": "debug_runs/screw1_near_grasp_cem_5gen_vectorized",
+      "mirror_paths": ["handoff/screw1_near_grasp_v0_1"],
+      "object": ["Screw1"],
+      "strategy": "16D GraspProgram, PCA6 Wuji fallback prior, mixed CEM and strict physical evaluator",
+      "candidate_budget": {"generations": 5, "population": 256, "physical_batch": 128, "elite_count": 32},
+      "actual_physics_resets": 1280,
+      "deepest_stage": "UNSAFE_SINGLE_TARGET_CONTACT",
+      "milestones": {
+        "target_contact": "2_UNSAFE_CANDIDATES",
+        "physical_lift": "FAILED_0_OF_1280",
+        "preinsert": "NOT_RUN",
+        "insert": "NOT_RUN",
+        "release": "NOT_RUN"
+      },
+      "final_classification": "NEAR_GRASP_SEARCH_INCOMPLETE",
+      "direct_failure_reason": "Only two target contacts occurred and both hard-aborted at 6.31 N and 16.50 N; no simultaneous contact or stable close occurred.",
+      "root_causes": [
+        {
+          "cause": "The ranking admitted zero-contact low-motion elites because contact geometry was not dominant enough.",
+          "evidence_level": "CONFIRMED"
+        },
+        {
+          "cause": "362 candidates had unresolved contact residuals that could not be assigned to a collider.",
+          "evidence_level": "CONFIRMED"
+        }
+      ],
+      "ruled_out": ["128-env vectorization blocker", "PPO accidentally starting", "A replayable lift existing in the CEM artifacts"],
+      "cannot_prove": ["GraspProgram parameterization insufficiency after only five generations", "Which bodies caused unresolved residuals"],
+      "lesson": "Search metrics must prefer safe contact over no contact, while strict success remains a separate evaluator.",
+      "source_entrypoints": ["scripts/environments/run_near_grasp_cem.py"],
+      "evidence_files": [
+        "debug_runs/screw1_near_grasp_cem_5gen_vectorized/report.md",
+        "debug_runs/handoff_release/reproduction_verification.json"
+      ]
+    },
+    {
+      "experiment_id": "EXP-05",
+      "name": "Privileged Physics Grasp v1 Plug2 Gate A",
+      "primary_path": "debug_runs/privileged_physics_grasp_v1",
+      "mirror_paths": ["1/debug_runs/privileged_physics_grasp_v1"],
+      "mirror_evidence_sha256": "bcf2bc822d58a35fe8ef7a66d4507617bed47edd50688b8379e3b32ac00308a8",
+      "object": ["Plug2"],
+      "strategy": "Surface contact synthesis, Wuji IK, strict candidate filter and oracle reset Gate A",
+      "candidate_budget": {"sampled": 2048, "retained": 128, "optimized": 64, "physics_shortlist": 16, "formal_candidates": 4, "trials_per_candidate": 5},
+      "actual_physics_resets": 20,
+      "deepest_stage": "GATE_A_CONTACT_HOLD",
+      "milestones": {
+        "target_contact": "PARTIAL_UNSTABLE",
+        "physical_lift": "FAILED",
+        "preinsert": "NOT_RUN",
+        "insert": "NOT_RUN",
+        "release": "NOT_RUN"
+      },
+      "final_classification": "PLUG2_GATE_A_FAILED",
+      "direct_failure_reason": "All four formal candidates failed 0/5 through hard force, multi-contact hold failure, or contact instrumentation limits.",
+      "root_causes": [
+        {
+          "cause": "Offline candidate targets did not produce a safe stable runtime hold.",
+          "evidence_level": "CONFIRMED"
+        }
+      ],
+      "ruled_out": ["Absence of any optimized Plug2 candidate", "Gate B/C accidentally running after Gate A failure"],
+      "cannot_prove": ["That all Plug2 grasp topologies are infeasible", "A full approach route"],
+      "lesson": "Oracle-reset Gate A is a physics diagnostic, not an autonomous grasp or full-route result.",
+      "source_entrypoints": ["scripts/environments/run_privileged_physics_grasp_v1.py"],
+      "evidence_files": [
+        "debug_runs/privileged_physics_grasp_v1/Plug2/synthesize/summary.json",
+        "debug_runs/privileged_physics_grasp_v1/Plug2/gate_a/gate_summary.json",
+        "debug_runs/privileged_physics_grasp_v1/Plug2/gate_a/trial_results.json"
+      ]
+    },
+    {
+      "experiment_id": "EXP-06",
+      "name": "Plug2 Gate A Forensic v2",
+      "primary_path": "debug_runs/plug2_gate_a_forensic_v2",
+      "mirror_paths": ["1/forensic_v2/debug_runs/plug2_gate_a_forensic_v2", "2/debug_runs/plug2_gate_a_forensic_v2"],
+      "mirror_evidence_sha256": "15fd09051fdf7e4320a0a717b8487bcf3aa2374d829f8d4c10a63e111b5b5e1d",
+      "object": ["Plug2"],
+      "strategy": "Raycast same-section contacts, friction-cone gravity wrench, support vertices, forensic same-frame trace and sequential Gate A",
+      "candidate_budget": {"sampled": 2048, "retained": 128, "optimized": 64, "physics_candidates": 16, "trials_per_candidate": 5},
+      "actual_physics_resets": 80,
+      "deepest_stage": "GATE_A_CONTACT_HOLD",
+      "milestones": {
+        "target_contact": "PARTIAL_UNSTABLE",
+        "physical_lift": "FAILED_0_OF_80",
+        "preinsert": "NOT_RUN",
+        "insert": "NOT_RUN",
+        "release": "NOT_RUN"
+      },
+      "final_classification": "PLUG2_GATE_A_FORENSIC_V2_FAILED",
+      "direct_failure_reason": "All 16 candidates failed 0/5: 75 multi-contact hold failures and 5 hard-force aborts.",
+      "root_causes": [
+        {
+          "cause": "Runtime tip-to-target residuals were approximately 20.459-40.984 mm.",
+          "evidence_level": "CONFIRMED"
+        },
+        {
+          "cause": "Pinocchio-versus-Isaac FK disagreement was too small to explain the 20-41 mm target residual.",
+          "evidence_level": "CONFIRMED"
+        }
+      ],
+      "ruled_out": ["A single unlucky reset", "Large cross-engine FK mapping error as the principal blocker"],
+      "cannot_prove": ["Which alternative contact topology would succeed", "Physical close or full route"],
+      "lesson": "A precise trace cannot rescue a candidate whose runtime target geometry is centimeters away.",
+      "source_entrypoints": ["scripts/environments/run_privileged_physics_grasp_v1.py", "scripts/environments/postprocess_plug2_gate_a_forensic_v2.py"],
+      "evidence_files": [
+        "debug_runs/plug2_gate_a_forensic_v2/final_summary.json",
+        "debug_runs/plug2_gate_a_forensic_v2/Plug2/gate_a_forensic_v2/gate_a_forensic_summary.json",
+        "debug_runs/plug2_gate_a_forensic_v2/Plug2/gate_a_forensic_v2/fk_cross_engine_summary.json"
+      ]
+    },
+    {
+      "experiment_id": "EXP-07",
+      "name": "Multi-Object Privileged Physical Grasp v3",
+      "primary_path": "debug_runs/multi_object_privileged_grasp_v3",
+      "mirror_paths": ["3/artifacts"],
+      "mirror_evidence_sha256": "271d46c40ca2a31d50deb485e0b069005990d4bed91152c2a45d92e23c27c785",
+      "object": ["Rod", "Backrest", "Frame", "Screw1", "Plug2"],
+      "strategy": "Runtime mesh audit, multi-seed staged M0 synthesis, strict M0 loader and Plug2 Gate A",
+      "candidate_budget": {
+        "screen_each": "512/64/32/top8",
+        "full_rod_backrest_frame": "2048/128/64/top16",
+        "plug2_physical_resets": 12
+      },
+      "actual_physics_resets": 12,
+      "deepest_stage": "PLUG2_GATE_A_CONTACT_HOLD",
+      "milestones": {
+        "target_contact": "PLUG2_PARTIAL_UNSTABLE",
+        "physical_lift": "FAILED",
+        "preinsert": "NOT_RUN",
+        "insert": "NOT_RUN",
+        "release": "NOT_RUN"
+      },
+      "object_results": {
+        "Rod": {"screen_reachable": "31/32", "full_reachable": "63/64", "strict_m0": 0, "physical_resets": 0},
+        "Backrest": {"screen_reachable": "32/32", "full_reachable": "64/64", "strict_m0": 0, "physical_resets": 0},
+        "Frame": {"screen_reachable": "24/32", "full_reachable": "50/64", "strict_m0": 0, "physical_resets": 0},
+        "Screw1": {"screen_reachable": "32/32", "strict_m0": 0, "physical_resets": 0},
+        "Plug2": {"screen_reachable": "30/32", "strict_m0": 1, "physical_resets": 12, "gate_a_successes": 0}
+      },
+      "final_classification": "STRICT_M0_CANDIDATE_GATE_A_FAILED",
+      "direct_failure_reason": "Strict M0 blocked every large object from physics; the sole Plug2 strict candidate failed both Gate A batches.",
+      "root_causes": [
+        {
+          "cause": "Large objects were mostly reachable but had zero strict candidates because residual/collision/path requirements were coupled before physics.",
+          "evidence_level": "CONFIRMED"
+        },
+        {
+          "cause": "Zero strict M0 proves mechanical grasp infeasibility.",
+          "evidence_level": "UNKNOWN"
+        }
+      ],
+      "ruled_out": ["Raw Stage A reachability as the sole blocker for Rod and Backrest", "Automatic PPO or old CEM execution"],
+      "cannot_prove": ["Physical behavior of Rod, Backrest, Frame or Screw1 candidates because they had zero resets", "General five-object grasp failure"],
+      "lesson": "Use strict M0 as acceptance, not the only development doorway into informative low-risk physics tests.",
+      "source_entrypoints": ["scripts/environments/run_multi_object_privileged_grasp_v3.py", "scripts/environments/run_privileged_physics_grasp_v1.py"],
+      "evidence_files": [
+        "debug_runs/multi_object_privileged_grasp_v3/final_summary.json",
+        "debug_runs/multi_object_privileged_grasp_v3/Rod/m0_full/summary.json",
+        "debug_runs/multi_object_privileged_grasp_v3/Backrest/m0_full/summary.json",
+        "debug_runs/multi_object_privileged_grasp_v3/Frame/m0_full/summary.json",
+        "debug_runs/multi_object_privileged_grasp_v3/Plug2/gate_a/trial_results.json"
+      ]
+    },
+    {
+      "experiment_id": "EXP-08",
+      "name": "Frame Physical Delivery RC1 cage proof",
+      "primary_path": "debug_runs/physical_delivery_rc1",
+      "mirror_paths": ["4/physical_delivery_rc1/artifacts"],
+      "mirror_evidence_sha256": "b856a115a0b0f2c043a66527f61bdbca949ae7c4b43a1d029496eb48e5f7bcf4",
+      "object": ["Frame"],
+      "strategy": "Twelve deterministic HOOK/WRAP/BRACKET mechanical cage candidates with geometry gate before physics",
+      "candidate_budget": {"generated": 12, "geometry_valid": 0},
+      "actual_physics_resets": 0,
+      "deepest_stage": "OFFLINE_GEOMETRY_GATE",
+      "milestones": {
+        "target_contact": "NOT_RUN",
+        "physical_lift": "NOT_RUN",
+        "preinsert": "NOT_RUN",
+        "insert": "NOT_RUN",
+        "release": "NOT_RUN"
+      },
+      "final_classification": "FRAME_CAGE_PROOF_FAILED_EARLY_STOP",
+      "direct_failure_reason": "No candidate passed the geometry gate, so the proof correctly performed zero physical candidate resets.",
+      "root_causes": [
+        {
+          "cause": "Scene-query control rays missed both the opening and bars, so HOOK topology could not be verified.",
+          "evidence_level": "CONFIRMED"
+        },
+        {
+          "cause": "The central hole was physically filled or Frame grasping was mechanically impossible.",
+          "evidence_level": "UNKNOWN"
+        }
+      ],
+      "ruled_out": ["An RC1 physical rollout failure; no candidate rollout occurred"],
+      "cannot_prove": ["Frame mechanical cage infeasibility", "Runtime contact or lift behavior"],
+      "lesson": "A scene-query instrumentation limitation must not be promoted into a mechanical feasibility conclusion.",
+      "source_entrypoints": ["scripts/environments/probe_frame_physical_cage.py"],
+      "evidence_files": [
+        "debug_runs/physical_delivery_rc1/final_summary.json",
+        "4/physical_delivery_rc1/README.md"
+      ]
+    },
+    {
+      "experiment_id": "EXP-09",
+      "name": "Frame Stage 4 Physical Delivery RC2",
+      "primary_path": "debug_runs/frame_stage4_delivery_rc2",
+      "mirror_paths": ["5/frame_stage4_delivery_rc2/artifacts"],
+      "mirror_evidence_sha256": "33cb457c357a7ae8d9709082f857e0a4122a4e377e6cb4f7c67e4c8a4707ea28",
+      "object": ["Frame"],
+      "strategy": "One fixed three-finger fork support pose, one baseline rollout and one measured -5 mm height correction",
+      "candidate_budget": {"fixed_pose": 1, "baseline_attempts": 1, "directed_corrections": 1},
+      "actual_physics_resets": 2,
+      "deepest_stage": "RESET_PRELOAD",
+      "milestones": {
+        "target_contact": "BASELINE_HARD_IMPACT_ONLY",
+        "physical_lift": "FAILED",
+        "preinsert": "NOT_REACHED",
+        "insert": "NOT_REACHED",
+        "release": "NOT_REACHED"
+      },
+      "final_classification": "FRAME_STAGE4_PHYSICAL_ROUTE_FAILED",
+      "direct_failure_reason": "Baseline hit 119.5378 N on frame-filtered finger2 link3; correction_1 removed hand-Frame force but Frame moved 19.1769 mm in three frames and triggered FRAME_JUMP.",
+      "root_causes": [
+        {
+          "cause": "The baseline fork reset had severe hand-Frame penetration or impact.",
+          "evidence_level": "CONFIRMED"
+        },
+        {
+          "cause": "Frame moved 19.1769 mm during correction_1's first three frames.",
+          "evidence_level": "CONFIRMED"
+        },
+        {
+          "cause": "The correction_1 jump was specifically a Frame-FixedAsset collision.",
+          "evidence_level": "INFERRED"
+        },
+        {
+          "cause": "Actor-pair attribution identified the exact collision body.",
+          "evidence_level": "UNKNOWN"
+        }
+      ],
+      "ruled_out": ["Post-reset root writes", "Sticky, snap, proxy, fixed joint or object-follow assistance", "Any support/lift/preinsert/insert/release milestone"],
+      "cannot_prove": ["The exact collider responsible for correction_1", "Whether the fixed fork pose can support Frame after a collision-free reset"],
+      "lesson": "Do not derive a large correction from an already-colliding frame without an independent collision-free measurement; bind published video and numeric result to the same attempt.",
+      "source_entrypoints": ["scripts/environments/run_frame_stage4_delivery_rc2.py"],
+      "evidence_files": [
+        "debug_runs/frame_stage4_delivery_rc2/final_summary.json",
+        "debug_runs/frame_stage4_delivery_rc2/attempt_0/full_route_trace.csv",
+        "debug_runs/frame_stage4_delivery_rc2/correction_1/full_route_trace.csv",
+        "5/frame_stage4_delivery_rc2/REPORT.md"
+      ]
+    }
+  ],
+  "reproduction_handoffs": [
+    {
+      "name": "Frozen Screw1 near-grasp replay handoff",
+      "path": "debug_runs/handoff_release",
+      "mirror_of": "EXP-04",
+      "result": "Candidate 373 reproduced NO_GRASP_CONTACT; candidate 33 reproduced TARGET_CONTACT_HARD_ABORT. These are synchronized failure videos, not new search results.",
+      "evidence_files": [
+        "debug_runs/handoff_release/final_report.md",
+        "debug_runs/handoff_release/reproduction_verification.json",
+        "debug_runs/handoff_release/video_validation.json"
+      ]
+    }
+  ]
+}

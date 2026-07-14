@@ -1,4 +1,16 @@
-# Furniture Assembly Environments
+# IsaacLab Furniture And Wuji Physical Grasp
+
+The repository contains furniture assembly environments and a Wuji five-object physical-grasp research stack.
+
+**Current physical-grasp status:** there is no validated physical grasp, lift, preinsert, insertion, or release. Existing videos are synchronized failure evidence or explicitly assisted/oracle output.
+
+Public documentation: [readme/README.md](readme/README.md).
+
+The manual includes setup, commands, code ownership, experiment history, evidence paths, current limitations, and result semantics.
+
+---
+
+## Other Furniture Assembly Environments
 
 Robotic furniture assembly environments built on Isaac Lab,  for autonomous part assembly using a Franka Panda robot.
 

@@ -1,0 +1,313 @@
+{
+  "annotated_video": "/home/CNS2025331827/docs/IsaacLab_furniture0/debug_runs/frame_stage4_delivery_rc2/videos/debug_first_internal.mp4",
+  "attempt": "attempt_0",
+  "frames": [
+    {
+      "physics_frame_id": 0,
+      "state": "SETTLE_ON_FORK",
+      "video_frame_index": 0
+    },
+    {
+      "physics_frame_id": 2,
+      "state": "FAILED",
+      "video_frame_index": 1
+    },
+    {
+      "physics_frame_id": 4,
+      "state": "FAILED",
+      "video_frame_index": 2
+    },
+    {
+      "physics_frame_id": 6,
+      "state": "FAILED",
+      "video_frame_index": 3
+    },
+    {
+      "physics_frame_id": 8,
+      "state": "FAILED",
+      "video_frame_index": 4
+    },
+    {
+      "physics_frame_id": 10,
+      "state": "FAILED",
+      "video_frame_index": 5
+    },
+    {
+      "physics_frame_id": 12,
+      "state": "FAILED",
+      "video_frame_index": 6
+    },
+    {
+      "physics_frame_id": 14,
+      "state": "FAILED",
+      "video_frame_index": 7
+    },
+    {
+      "physics_frame_id": 16,
+      "state": "FAILED",
+      "video_frame_index": 8
+    },
+    {
+      "physics_frame_id": 18,
+      "state": "FAILED",
+      "video_frame_index": 9
+    },
+    {
+      "physics_frame_id": 20,
+      "state": "FAILED",
+      "video_frame_index": 10
+    },
+    {
+      "physics_frame_id": 22,
+      "state": "FAILED",
+      "video_frame_index": 11
+    },
+    {
+      "physics_frame_id": 24,
+      "state": "FAILED",
+      "video_frame_index": 12
+    },
+    {
+      "physics_frame_id": 26,
+      "state": "FAILED",
+      "video_frame_index": 13
+    },
+    {
+      "physics_frame_id": 28,
+      "state": "FAILED",
+      "video_frame_index": 14
+    },
+    {
+      "physics_frame_id": 30,
+      "state": "FAILED",
+      "video_frame_index": 15
+    },
+    {
+      "physics_frame_id": 32,
+      "state": "FAILED",
+      "video_frame_index": 16
+    },
+    {
+      "physics_frame_id": 34,
+      "state": "FAILED",
+      "video_frame_index": 17
+    },
+    {
+      "physics_frame_id": 36,
+      "state": "FAILED",
+      "video_frame_index": 18
+    },
+    {
+      "physics_frame_id": 38,
+      "state": "FAILED",
+      "video_frame_index": 19
+    },
+    {
+      "physics_frame_id": 40,
+      "state": "FAILED",
+      "video_frame_index": 20
+    },
+    {
+      "physics_frame_id": 42,
+      "state": "FAILED",
+      "video_frame_index": 21
+    },
+    {
+      "physics_frame_id": 44,
+      "state": "FAILED",
+      "video_frame_index": 22
+    },
+    {
+      "physics_frame_id": 46,
+      "state": "FAILED",
+      "video_frame_index": 23
+    },
+    {
+      "physics_frame_id": 48,
+      "state": "FAILED",
+      "video_frame_index": 24
+    },
+    {
+      "physics_frame_id": 50,
+      "state": "FAILED",
+      "video_frame_index": 25
+    },
+    {
+      "physics_frame_id": 52,
+      "state": "FAILED",
+      "video_frame_index": 26
+    },
+    {
+      "physics_frame_id": 54,
+      "state": "FAILED",
+      "video_frame_index": 27
+    },
+    {
+      "physics_frame_id": 56,
+      "state": "FAILED",
+      "video_frame_index": 28
+    },
+    {
+      "physics_frame_id": 58,
+      "state": "FAILED",
+      "video_frame_index": 29
+    },
+    {
+      "physics_frame_id": 60,
+      "state": "FAILED",
+      "video_frame_index": 30
+    },
+    {
+      "physics_frame_id": 62,
+      "state": "FAILED",
+      "video_frame_index": 31
+    },
+    {
+      "physics_frame_id": 64,
+      "state": "FAILED",
+      "video_frame_index": 32
+    },
+    {
+      "physics_frame_id": 66,
+      "state": "FAILED",
+      "video_frame_index": 33
+    },
+    {
+      "physics_frame_id": 68,
+      "state": "FAILED",
+      "video_frame_index": 34
+    },
+    {
+      "physics_frame_id": 70,
+      "state": "FAILED",
+      "video_frame_index": 35
+    },
+    {
+      "physics_frame_id": 72,
+      "state": "FAILED",
+      "video_frame_index": 36
+    },
+    {
+      "physics_frame_id": 74,
+      "state": "FAILED",
+      "video_frame_index": 37
+    },
+    {
+      "physics_frame_id": 76,
+      "state": "FAILED",
+      "video_frame_index": 38
+    },
+    {
+      "physics_frame_id": 78,
+      "state": "FAILED",
+      "video_frame_index": 39
+    },
+    {
+      "physics_frame_id": 80,
+      "state": "FAILED",
+      "video_frame_index": 40
+    },
+    {
+      "physics_frame_id": 82,
+      "state": "FAILED",
+      "video_frame_index": 41
+    },
+    {
+      "physics_frame_id": 84,
+      "state": "FAILED",
+      "video_frame_index": 42
+    },
+    {
+      "physics_frame_id": 86,
+      "state": "FAILED",
+      "video_frame_index": 43
+    },
+    {
+      "physics_frame_id": 88,
+      "state": "FAILED",
+      "video_frame_index": 44
+    },
+    {
+      "physics_frame_id": 90,
+      "state": "FAILED",
+      "video_frame_index": 45
+    },
+    {
+      "physics_frame_id": 92,
+      "state": "FAILED",
+      "video_frame_index": 46
+    },
+    {
+      "physics_frame_id": 94,
+      "state": "FAILED",
+      "video_frame_index": 47
+    },
+    {
+      "physics_frame_id": 96,
+      "state": "FAILED",
+      "video_frame_index": 48
+    },
+    {
+      "physics_frame_id": 98,
+      "state": "FAILED",
+      "video_frame_index": 49
+    },
+    {
+      "physics_frame_id": 100,
+      "state": "FAILED",
+      "video_frame_index": 50
+    },
+    {
+      "physics_frame_id": 102,
+      "state": "FAILED",
+      "video_frame_index": 51
+    },
+    {
+      "physics_frame_id": 104,
+      "state": "FAILED",
+      "video_frame_index": 52
+    },
+    {
+      "physics_frame_id": 106,
+      "state": "FAILED",
+      "video_frame_index": 53
+    },
+    {
+      "physics_frame_id": 108,
+      "state": "FAILED",
+      "video_frame_index": 54
+    },
+    {
+      "physics_frame_id": 110,
+      "state": "FAILED",
+      "video_frame_index": 55
+    },
+    {
+      "physics_frame_id": 112,
+      "state": "FAILED",
+      "video_frame_index": 56
+    },
+    {
+      "physics_frame_id": 114,
+      "state": "FAILED",
+      "video_frame_index": 57
+    },
+    {
+      "physics_frame_id": 116,
+      "state": "FAILED",
+      "video_frame_index": 58
+    },
+    {
+      "physics_frame_id": 118,
+      "state": "FAILED",
+      "video_frame_index": 59
+    },
+    {
+      "physics_frame_id": 120,
+      "state": "FAILED",
+      "video_frame_index": 60
+    }
+  ],
+  "raw_video": "/home/CNS2025331827/docs/IsaacLab_furniture0/debug_runs/frame_stage4_delivery_rc2/videos/attempt_0_raw.mp4",
+  "trace_path": "/home/CNS2025331827/docs/IsaacLab_furniture0/debug_runs/frame_stage4_delivery_rc2/attempt_0/full_route_trace.csv"
+}

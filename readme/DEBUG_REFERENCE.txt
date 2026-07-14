@@ -1,0 +1,608 @@
+WUJI 五对象物理抓取：Debug 尝试与工程参考
+================================================================================
+
+生成日期：2026-07-14
+仓库：/home/CNS2025331827/docs/IsaacLab_furniture0
+审计范围：debug_runs/ 下 74 个顶层目录，以及其 summary/report/manifest；大型 trace 只在核对矛盾时抽查。
+
+结论
+--------------------------------------------------------------------------------
+
+1. 当前没有可信的物理抓取、物理抬升、preinsert、insert 或 release 结果。
+2. 当前工程栈包含运行时资产审计、26D 控制权验证、目标过滤接触、reset-only write 约束、向量环境、候选缓存、严格 evaluator、逐帧 trace 和视频对齐。
+3. 仅能够严格核对的正式 CEM/Gate/RC2 已执行至少 1,394 次 fresh reset：CEM 1,280、Plug2 v1 20、Plug2 forensic 80、五对象 v3 Plug2 12、Frame RC2 2。这还没有计算早期 45 个 Screw1 baseline 目录和 contact-adaptive calibration/trial，因为它们没有一个可信的总 reset 计数。
+4. 失败不是一个单一算法结论。不同阶段分别暴露了 runtime wrist、接触归因、候选几何、strict M0、厘米级 target residual、RC2 reset penetration 等问题。
+5. 后续开发不应原样重跑旧 CEM/旧 Screw1 seed；应从运行时可验证、低力、粗粒度接触目标开始，优先 Rod/Backrest，并允许有限的 diagnostic physics 绕开 strict M0 开发入口。
+
+项目概览
+--------------------------------------------------------------------------------
+
+当前成果是 Wuji 五指手物理抓取研究基础设施和可复现失败证据，不是成功装配视频。系统已经验证腕部和 20 个手指关节的控制链，建立对象级几何/spec、候选生成、接触传感、物理 Gate、视频和 trace 对齐，并执行 1,280 个 Screw1 搜索样本、100 个 Plug2 Gate resets、五对象 M0 和两代 Frame 路线。已知瓶颈包括运行时候选接触几何、过严的离线物理入口以及 Frame reset 碰撞。
+
+主要工作阶段：
+
+- 最初先把统一五对象 workcell、active object state、26D action mapping、target-filtered contact sensor 和 reset lifecycle 查清楚，证明 contact API 和 wrist/hand 控制链本身可以工作。
+- 随后围绕 Screw1 做了 45 个 baseline/debug 目录，逐步排除了无手稳定性、action authority、wrist target propagation、seed replay、contact handoff 和 dual regulator 的若干实现问题。最终仍没有稳定双指接触。
+- 做了 40 个 signed joint probes，得到了有效 30x20 morphology effect matrix；又尝试 object-relative 6x8 local Jacobian。矩阵本身 rank 6，但 restore repeatability 不合格，所以没有把不可靠模型交给主控制器。
+- 搭建了 128-env near-grasp 环境。vector smoke 从 articulation/device/mass/quaternion bug 逐步修到 220 steps 通过；正式 5-generation CEM 完成 1,280 candidates，但只有两个目标接触，而且都超过 5 N，零 dual contact、零 close、零 lift。
+- 转向 privileged geometry：Plug2 v1 跑 20 resets，forensic v2 跑 80 resets。后者证明实际 tip-to-target residual 是 20-41 mm，而 Pinocchio/Isaac FK 误差很小，因此不能继续把问题归因于简单 joint-order/FK 错误。
+- 扩展到五对象后，Rod/Backrest/Frame 大部分 Stage A 可达，但 strict M0 全是 0，所以根本没有进入物理；只有 Plug2 的一个 strict candidate 进入 12 resets，仍失败。这说明 strict M0 适合验收，却不适合做唯一开发入口。
+- Frame RC1 生成 12 个 cage candidates，但 scene query 无法验证中央孔/杆件，物理 reset 为 0。RC2 放弃搜索，固定三指 fork；baseline 第二个数值帧约 119.54 N，说明 reset 已碰撞；-5 mm correction 后手-Frame 力归零，但 Frame 三帧移动 19.18 mm，exact collider 又没有 actor-pair 证据。
+- 当前产物是经过系统测量并定位到层级的失败证据和可继续使用的工程接口，不是物理成功。
+
+已实现工程能力
+--------------------------------------------------------------------------------
+
+A. 运行时和控制权
+
+- 建立 floating Wuji 26D action 路径：6D wrist + 20D hand。
+- 单独 wrist smoke 在无家具/无桌/无地面场景中，PD fix on/off 各 5/5 waypoints 通过，证明 wrist position target 可以传播；这不等于在家具场景中路径可行。
+- 20 joints x positive/negative = 40 probes，形成 30x20 effect matrix，crosstalk max 0.07784、mean 0.04293。
+- reset-only object/root write 和 post-reset write audit 被加入 near-grasp、Gate 和 Frame 环境。
+
+B. 接触真实性
+
+- 五指 target-filtered force matrix、unfiltered force、Table/ground filter、actor-pair callback 和 unresolved residual 被分开记录。
+- 证明 cube-to-cube reference contact 和 sensor structure可用；同时发现 GPU Table/ground filter 和部分 actor-pair callback 并不可靠。
+- 明确禁止把 unfiltered residual 推断为某个具体碰撞体，也不把距离当接触。
+
+C. 搜索、候选和验收
+
+- 完成 128-env、169D observation 的 dedicated Screw1 environment，vector smoke 最终达到 220 steps finite observations。
+- 完成 mixed CEM、candidate-level strict evaluation、incremental metrics 和 handoff replay。
+- 建立五对象 ObjectGraspSpec、allowed regions/groups/modes、runtime collision mesh audit、friction-cone gravity wrench、staged IK、immutable candidate cache。
+- 建立 Gate A/B/C 和 Frame A/B/C/NONE milestone evaluator；当前代码已修正“generic Gate C 只到 lift 却叫 full route”的语义。
+
+D. 可复现失败证据
+
+- Plug2 forensic 保存了 80 reset traces、首帧、contact attribution、Isaac/Pinocchio FK 对照。
+- CEM handoff 保存 candidate 373 no-contact 和 candidate 33 hard-abort 的同步失败视频。
+- Frame RC2 保存 baseline debug video；但要注意它只匹配 attempt_0，不匹配最终 correction_1 数值结果。
+
+失败过程中沉淀出的高价值代码资产
+--------------------------------------------------------------------------------
+
+当前可复用主线大约有 16,060 行：near-grasp core 3,823 行、grasp synthesis 3,210 行、Frame physical delivery 2,847 行、六个关键 runner 4,926 行、四份核心纯测试 1,254 行。另有约 13,341 行早期 control/diagnostic 模块；它们不应继续作为默认算法，但保存了运行时知识。
+
+行数本身不证明质量。真正有价值的是以下代码已经形成清楚的输入/输出、fail-closed 安全边界、机器可读证据和纯测试。这些模块可以继续使用，即使产生它们的某次抓取实验失败。
+
+1. Dedicated vectorized physics environment
+
+核心文件：
+- `near_grasp/near_grasp_physics_env.py`
+- `near_grasp/observation.py`
+- `near_grasp/grasp_program.py`
+
+已经解决的问题：
+- 将五对象 modulo/legacy backend 之外的 Screw1 专用物理场景独立出来。
+- 建立 128-env、169D named observation、device-local phase state、reset-only writes、force guards和finite-observation smoke。
+- 把 program/template、wrist residual、hand prior、接触历史和物体相对变换放在一个可批处理环境中。
+
+为什么值得复用：
+- v3-v9 vector smoke真实经历并修复 articulation root、CPU/CUDA index、mass backend、quaternion broadcast和scalar synchronization问题；最终不是“理论上支持并行”，而是 128 env/220 steps runtime PASS。
+- 新算法可以替换 program/controller，而不必重写 scene、observation、reset、sensor 和 evaluator plumbing。
+
+深刻教训：
+- 把 `num_envs` 改大不是向量化。每个 quaternion constant、index tensor、reset write和phase transition都必须具有 batch semantics。
+- vector smoke必须覆盖多次reset和足够长时序；1-step PASS不能证明episode lifecycle正确。
+
+2. Search 与 strict physical truth 分离
+
+核心文件：
+- `near_grasp/evaluator.py`
+- `grasp_synthesis/grasp_energy.py`
+- `grasp_synthesis/physics_validator.py`
+- `near_grasp/cem.py`
+
+已经解决的问题：
+- SearchMetrics、lexicographic CEM ranking和StrictPhysicalEvaluator各自负责不同语义。
+- target-filtered contact、stable close、lift、table support、drift、force、root writes全部由独立evaluator判断，不读取reward_total。
+- no-contact与safe-contact排序错误已经被测试锁住；generic Gate C也不再冒充assembly full route。
+
+为什么值得复用：
+- 后续可以大胆修改search shaping，而不用放松最终物理标准。
+- anti-reward-hacking和honesty fields已经进入数据结构，可直接复用现有成功定义。
+
+深刻教训：
+- 开发指标和验收指标必须分离，但不能彼此失联。旧CEM的strict evaluator是诚实的，search ranking却把zero-contact elite保留下来，导致算力被错误目标吸收。
+- 成功字段命名也是控制系统的一部分；一个错误的`full_route_success`会污染报告、视频和后续决策。
+
+3. Prior adapter 和低维 program 接口
+
+核心文件：
+- `near_grasp/hand_prior_adapter.py`
+- `near_grasp/grasp_program.py`
+- `near_grasp/configuration.py`
+
+已经解决的问题：
+- 用统一 `HandPriorAdapter` 隔离 CoorDex 12D decoder 和 deterministic PCA6 fallback。
+- 对 CoorDex 66D proprio order、default-relative target semantics、output dimension和joint order建立显式检查。
+- 16D GraspProgram把wrist、latent和timing冻结为可hash、可回放的数据。
+
+为什么值得复用：
+- 后续更换seed provider不需要改变physics evaluator或environment contract。
+- CoorDex/Wuji-retargeting的作用被限制为seed/prior，不会无意变成teacher motion或成功证据。
+
+深刻教训：
+- 外部模型兼容不是“checkpoint能load”。输入顺序、normalization、joint order、default pose和输出缩放都必须数值对照。
+- 先验能降低搜索维度，但不能替代对象接触拓扑；PCA endpoint修复后仍没有产生低力多接触。
+
+4. 可复现配置、manifest 和 immutable cache
+
+核心文件：
+- `near_grasp/run_manifest.py`
+- `near_grasp/configuration.py`
+- `grasp_synthesis/candidate_cache.py`
+- `near_grasp/replay.py`
+
+已经解决的问题：
+- resolved config、git/dirty状态、命令、版本、资产/prior/source hash被写入run manifest。
+- candidate cache把spec、runtime mesh、URDF、joint order、solver和physics fingerprint纳入input hash，并校验content hash。
+- exact replay固定candidate、template、reset seed和physics packet，不修改候选。
+
+为什么值得复用：
+- 当前候选虽然失败，但任何人可以回答“这条结果究竟用了哪个资产、配置和代码”。
+- 旧schema或hash mismatch会fail closed，避免错误cache悄悄进入正式Gate。
+
+深刻教训：
+- dirty worktree下仅有git tag不够；未跟踪源码、资产和prior都必须单独hash。
+- replay matching应该比较物理终止类别和attempt identity，而不只是“视频和某条trace都存在”。
+
+5. ObjectGraspSpec 与对象特定几何层
+
+核心文件：
+- `grasp_synthesis/object_spec.py`
+- `configs/grasp_synthesis/objects/*.yaml`
+- `grasp_synthesis/contact_sampler.py`
+
+已经解决的问题：
+- 五对象的asset、region、finger group、contact mode、section axis/thickness、approach、force和fallback order进入schema v3。
+- Frame四杆区域显式排除中央孔；Plug/Screw和Rod/Backrest使用不同厚度/截面规则。
+- sampler支持runtime collision mesh、surface sampling、同截面raycast、three-point和deterministic fallback。
+
+为什么值得复用：
+- 对象知识应通过YAML/spec修改，不应复制part-name controller。
+- 这些接口已经把“通用控制”和“对象机械语义”分离，为Rod/Backrest新抓法保留了正确扩展点。
+
+深刻教训：
+- 一个antipodal sampler不能覆盖细圆柱、宽板、长杆和中空框架。
+- analytic geometry适合作sampling hint，不应覆盖runtime cooked collision truth。
+
+6. Staged IK、collision continuation 与 wrench feasibility
+
+核心文件：
+- `grasp_synthesis/wuji_ik.py`
+- `grasp_synthesis/grasp_energy.py`
+
+已经解决的问题：
+- Pinocchio 26DOF model、runtime joint order、tip frames、point Jacobian、DLS和least-squares fallback集中在一个kinematic model。
+- HPP-FCL检查self/hand-object/table collision，支持closed/pregrasp/standoff/path阶段。
+- friction-cone LP检查gravity wrench；不再用两列SVD冒充force closure。
+- `GraspCandidate`保存per-tip residual、support vertex、penetration pairs、path flags和Gate eligibility。
+
+为什么值得复用：
+- 这是可替换optimizer的完整研究骨架；可更换seed/contact topology，同时保留collision、wrench、serialization和Gate loader。
+
+深刻教训：
+- Stage A高reachability与strict M0=0说明优化目标之间存在竞争；把1 mm residual、collision、path和wrench一次性作为唯一入口会让物理层得不到信息。
+- offline FK一致不等于runtime contact target一致；support vertex、tip frame、object pose和cooked geometry必须在第一物理帧交叉验证。
+
+7. Object-space contact controller 与重新接触
+
+核心文件：
+- `grasp_synthesis/contact_controller.py`
+- `precontact_fingertip_controller.py`
+- `dual_contact_regulator.py`
+
+已经解决的问题：
+- 每个active finger使用独立point Jacobian、DLS、force normal feedback、joint cap和wrist cap。
+- 0.05 N latch、0.035 N keep、连续三步失联释放并允许reacquire，替代永久freeze。
+- local Jacobian记录singular values、condition、projection residual、restore error、lag和crosstalk。
+
+为什么值得复用：
+- 虽然Screw1 local Jacobian因restore gate未进入主线，但代码准确区分了“矩阵结构可控”和“当前endpoint测量不可重复”。
+- 控制器可用于Rod/Backrest runtime target，不需要回到blind polarity search。
+
+深刻教训：
+- 一个数学上rank 6的Jacobian仍可能在实际actuator settle/restore下不可用。
+- 接触不是一次性事件；controller必须允许loss、reacquisition和finger-independent progression。
+
+8. Forensic trace 与接触归因
+
+核心文件：
+- `grasp_synthesis/forensic_trace.py`
+- `near_grasp/replay.py`
+- `scripts/environments/postprocess_plug2_gate_a_forensic_v2.py`
+
+已经解决的问题：
+- physics step -> synchronized snapshot -> attribution -> trace -> termination 的帧顺序被固定。
+- q/target/error、Isaac tips、Pinocchio tips、target poses、object velocity、filtered/unfiltered force和actor-pair events可以同帧对齐。
+- terminal env trace会截断；80个Plug2 resets有逐reset evidence和FK后处理。
+
+为什么值得复用：
+- 它把“候选失败”变成可定位的20-41 mm runtime residual，而不是继续凭视觉猜offset。
+- 同一工具也暴露了actor-pair callback为空、Table/ground filter不支持等instrumentation边界。
+
+深刻教训：
+- 详细trace的价值在于缩小根因，不在于让失败看起来更复杂。
+- attribution必须诚实地输出UNKNOWN/UNRESOLVED；没有pair evidence时不能命名具体collider。
+
+9. Frame physical delivery 独立栈
+
+核心文件：
+- `physical_delivery/contracts.py`
+- `frame_cage_planner.py`
+- `grasp_executor.py`
+- `frame_fork_support.py`
+- `frame_stage4_env.py`
+- `frame_stage4_controller.py`
+- `frame_stage4_evaluator.py`
+
+已经解决的问题：
+- RC1将cage topology、bar/hole extraction、gravity escape和cage margin建模为明确contract。
+- RC2建立独立DirectRLEnv，不继承旧Chair4 held/sync逻辑；Frame/fixed/robot state writes受`ResetWriteGate`约束。
+- 固定fork pose、support evidence、lift/preinsert/insert/release状态机和A/B/C/NONE evaluator彼此分离。
+- 视频、trace、contact、root-write和attempt ID有明确alignment；普通RC2 replay现在默认不会重建历史`5/`。
+
+为什么值得复用：
+- 即使当前fork reset失败，transport/insert/release的状态机、目标transform和write guard仍是可复用的Stage 4框架。
+- 后续应先替换collision-free support pose，不需要重新实现整个delivery route。
+
+深刻教训：
+- 不应在候选/抓取未通过时提前把route视频当结果，但route contract可以先写好并严格锁住禁止行为。
+- correction必须来自collision-free measurement；119 N penetration frame不能作为精确calibration基准。
+
+10. 外部基线和许可证隔离
+
+核心文件：
+- `scripts/environments/audit_external_wuji_baselines.py`
+- `scripts/environments/audit_external_grasp_models_v3.py`
+- `debug_runs/external_baseline_audit/`
+
+已经解决的问题：
+- pinned commit、license、checkpoint、joint/asset diff、smoke status和redistribution policy有机器记录。
+- third-party repos不进入project imports；无许可证的CoorDex/UniDex不复制到交付源码。
+
+为什么值得复用：
+- 后续团队可以继续做isolated smoke或seed extraction，而不必重新调查版本和许可证。
+
+深刻教训：
+- “参考一流开源算法”首先是兼容性和license工程，不是复制模型名字。
+- external provider只能报告它真正通过的层级；static smoke不能写成runtime grasp能力。
+
+11. Pure tests、AST gates 和 honesty regression
+
+核心文件：
+- `test_near_grasp_search.py`
+- `test_privileged_physics_grasp.py`
+- `test_physical_delivery_rc1.py`
+- `test_frame_stage4_delivery_rc2.py`
+
+已经解决的问题：
+- 参数解码、PCA endpoint、ranking、cache、raycast、wrench、IK、collision/residual解耦、contact reacquisition、Gate顺序、write gate和video matching都有纯测试。
+- AST gates阻止RC2重新导入FrameCagePlanner、旧Chair4 env、CEM/PPO、fixed joint/object-follow/sticky/snap/proxy路径。
+- 当前四个核心测试文件为56 passed；Pinocchio warning被保留而非隐藏。
+
+为什么值得复用：
+- 这些测试保护的是实验诚实性和接口语义，不依赖昂贵Isaac rollout，因此适合每次修改前快速运行。
+
+深刻教训：
+- 物理项目不能只测试数值函数；还要测试“某条禁止路径没有被import”和“某个成功字段永远不能由错误阶段设置”。
+
+12. 早期 legacy/diagnostic code仍然有知识价值
+
+代表文件：
+- `unified_action_mapper.py`
+- `screw1_grasp_baseline_v2.py`
+- `hand_morphology.py`
+- `closure_prior.py`
+- `contact_adaptive_closure.py`
+- `contact_adaptive_grasp_baseline.py`
+- `precontact_fingertip_controller.py`
+- `dual_contact_regulator.py`
+
+这批约13,341行代码不应整体回到默认主线，但不能简单删除。它记录了26D mapping、wrist isolation、no-hand settle、seed replay、all-body sensors、morphology probes、prior scheduling、local Jacobian和dual-contact调节的实际坑点。
+
+正确复用方式：
+- 抽取已被pure test覆盖的contract、calibration和diagnostic helper。
+- 保持旧runner为reference，不再从其中继续增加第46个offset/seed变体。
+- 在依赖审计证明无active imports之前不移动或删除。
+
+这些代码明确了必须独立验证的层级：host/runtime、action authority、wrist tracking、joint effect、contact truth、candidate geometry、closed hold、lift和delivery。后续工作可直接从未解决层级开始。
+
+工程资产与限制
+--------------------------------------------------------------------------------
+
+已实现的可复用资产包括128环境物理执行器、五对象几何/spec、Pinocchio/HPP-FCL候选求解、force-wrench检查、独立strict evaluator、immutable cache、逐帧contact forensic、Frame Stage 4状态机和纯回归测试。实验反例覆盖设备广播、reset写入、厘米级target residual、空actor-pair、strict M0过严和碰撞帧校准。
+
+这些能力解决可运行、可测量、可复现和不误报的问题，但不会自动产生可行抓法。物理里程碑仍然全部为false。剩余任务是基于真实runtime geometry定义link/support surface、collision-free approach和低力多指承重策略。
+
+待实现任务：
+
+1. 优先 Rod 或 Backrest，而不是继续从 Screw1/Plug2 开始。它们的 Stage A reachability 已经很高，尺寸也更适合 Wuji 指间距。
+2. 给 strict M0 旁边增加“diagnostic-only physics gate”：允许 collision-safe、厘米以下但未到 1 mm 的候选做一次低力 contact acquisition；仍不得算成功。
+3. 第一帧直接从 Isaac runtime tip/link collision vertices 和 object mesh 反算 contact target，不再只信离线 support vertex。
+4. 先证明两个不同 finger 对目标对象有 actor-pair + filtered-force 共同证据，再做 close/lift。
+5. 对 Frame 先构造 collision-free reset measurement；不要从 119 N 的碰撞帧继续推导 offset。
+6. 修复或替代 actor-pair instrumentation 后，再对 correction_1 的 Frame jump 定具体碰撞体。
+7. 只有 safe multi-contact hold 可复现时，才讨论 residual RL；旧 14D latent/speed/hold PPO 没有直接接触控制权，不应直接重启。
+
+不要再原样重复什么
+--------------------------------------------------------------------------------
+
+1. 不要原样重跑 5-generation Screw1 CEM。
+   已有证据：debug_runs/screw1_near_grasp_cem_5gen_vectorized/。
+   1,280 candidates 中仅 2 个 target contact，都是 6.31 N/16.50 N hard abort；旧 ranking 会保留 no-contact low-motion elites。除非先改变接触目标、template 或 ranking，不增加信息量。
+
+2. 不要继续堆 Screw1 wrist seed/offset 微调目录。
+   已有证据：45 个 screw1_grasp_baseline_v2* 目录。
+   action authority、wrist propagation、PD on/off、seed replay、high standoff、rotation prelude、contact handoff 都有专门变体；多数只证明 harness 可运行，最终没有 close/lift。
+
+3. 不要把 near-bank、seed replay 或单指力当 grasp bank。
+   `HEALTH_OK + seed_replay_phase_only` 只是阶段 smoke。scripted baseline 的 finger3 甚至达到约 290.88 N、finger4 为 0，说明单指撞击不是抓取。
+
+4. 不要继续使用当前 Plug2 top candidates 做重复 Gate A。
+   v1 已 4 x 5 全失败；forensic v2 已 16 x 5 全失败。20-41 mm runtime target residual 是量级错误，继续换 reset seed不能修复。
+
+5. 不要把 strict M0=0 解释成大物体机械不可抓。
+   Rod 63/64、Backrest 64/64、Frame 50/64 full Stage A reachable，却都因 strict criteria 得到 0 physical resets。这个结果只证明当前 pipeline 的 strict candidate 为空。
+
+6. 不要用 scene-query miss 证明 Frame 中央孔被碰撞体填满。
+   RC1 的 rays 同时 miss 孔和四杆，属于 query/verification limitation；它没有进入物理 proof。
+
+7. 不要从已经碰撞的 RC2 baseline 继续算高度修正。
+   baseline 第二帧约 119.54 N，说明 measurement 本身已被 penetration/impact 污染。已有一次 -5 mm correction 足够证明“直接按该 gap 修”不可靠。
+
+8. 不要把 correction_1 的 Frame jump写成已确认的 Frame-FixedAsset 碰撞。
+   correction_1 的 19.18 mm displacement 是 confirmed；具体 collider 只有 inferred，因为 contact_pair_event_count=0，Frame-fixed filter pattern invalid。
+
+9. 不要把 morphology calibration v2 的 result_class 当作 Screw1 lift。
+   `contact_adaptive_morphology_calibration_v2/contact_adaptive_summary.json` 的 phase 是 morphology_calibration，只有 40 probes；没有 physical_grasp_success、physical_lift_success、trial 或 video。`SCREW1_LIFT_ACQUIRED_TRANSFER_PENDING` 是历史错误分类名。
+
+10. 不要把 CoorDex/Wuji-retargeting 当成已决定抓法的模型。
+    它们在当前工程中只是 Stage A seed provider。CoorDex 只有 static checkpoint smoke，isolated runtime smoke 未完成；UniDex 只有 input feasibility。
+
+11. 不要直接启动 PPO。
+    ResidualRlGate 要求 replayable lift；当前 replayable_lift=false，safe target contact也为 0。旧 PPO action 不能直接修复 runtime contact target。
+
+12. 不要把 sticky/oracle/visual proxy 视频改名成物理成功。
+    `_scratch/mixed_max7_v41_regression` 的 7/7 是 assisted_realistic：6 个 plug sticky、1 个 debug held backrest，physical_count=0。
+
+13. 不要把 generic Gate C 再叫 full route。
+    通用 runner 只执行 standoff -> approach -> close -> hold -> lift；transport/preinsert/insert/release 只在 Frame RC2 状态机中存在。
+
+按时间和问题层级看全部尝试
+--------------------------------------------------------------------------------
+
+阶段 1：统一 workcell 和最小真实性审计（约 7 月 9-10 日）
+
+- v95_minimal_unified_workcell_repair：核对五对象 identity、active object state、action mapping、reset lifecycle、target filter structure、cube contact canary、joint motion。五对象都被锁在 ACTUAL_OBJECT_CONTACT_BLOCKER；Screw1 forced pose 没有碰到 source body。PPO/BC/final replay/video均未运行。
+- scripted_baseline_screw1：执行 scripted contact refinement；找到 finger3-only target contact，但 peak 约 290.88 N、finger4=0、object moved 22.0 mm，close/lift 未执行。视频是失败/调试证据。
+
+阶段 2：Screw1 v2 baseline 的 45 个变体（约 7 月 10-12 日）
+
+这批目录不是 45 个独立抓取算法，主要是把同一 frozen/acquisition runner 拆成可审计的小问题：host health、no-hand settle、action authority、wrist translation、seed replay、contact handoff、dual regulator。它们的共同终点是 grasp_solved=false、close_executed=false、lift_executed=false。
+
+阶段 3：手部先验和 contact-adaptive（约 7 月 12-13 日）
+
+- closure_prior：从 262-frame other-hand recording提取 timing/synergy；source_success=false，PC1-2 解释 92.416%。它只能作 timing prior。
+- morphology calibration v1：40 probes 全部 target/response gate失败，matrix rank 0，定位 action scaling问题。
+- morphology calibration v2：修复 action scale后 40 probes valid，30x20 matrix有效。历史 result_class 误写成 lift acquired，不能采信。
+- first contact-adaptive grasp：3 trials 都因 table_barrier_abort，没有正式 closure。
+- caging fix：执行 364 个 nonzero synergy steps，但 target forces 仍为 0，随后 non-target abort。
+- object-relative precontact：6x8 Jacobian rank 6、condition 65.43，但 joint restore 0.000725 rad、tip restore 1.068 mm 超门槛；controller未执行。
+
+阶段 4：near-grasp 环境和 CEM（7 月 13 日）
+
+- vector smoke 依次遇到 articulation-root、CPU/CUDA、mass backend、quaternion broadcasting 问题；v6、v8、v9 最终通过。
+- non-vectorized 5-gen run停在 ENV_CREATED，没有 candidate completion。
+- vectorized 5-gen run完成 1,280 candidates，910 valid、370 hard-invalid、2 unsafe target contacts、0 simultaneous、0 stable close、0 lift。
+- handoff_release 只复放现有候选：373=no contact，33=hard abort。它证明 artifact 可复现，不是新搜索。
+
+阶段 5：Privileged geometry 和 Plug2 forensic（7 月 13 日）
+
+- privileged_physics_grasp_v1：2048/128/64/16，4 formal candidates x5，全部失败。
+- plug2_gate_a_forensic_v2：同预算重合成，16 candidates x5=80 resets；75 hold fail、5 hard abort；FK跨引擎误差小，tip target residual 20-41 mm。
+
+阶段 6：五对象 M0（7 月 13-14 日）
+
+- Rod/Backrest/Frame/Screw1 大多 reachability 成功，但 strict M0=0，因此 physical resets=0。
+- Plug2 screen 得到 1 strict candidate，随后 12 resets仍无法稳定 contact hold。
+- external_baseline_audit 完成 pinned commit/license/static smoke；没有外部模型提供物理成功证据。
+
+阶段 7：Frame RC1/RC2（7 月 14 日）
+
+- RC1：12 cage candidates，0 geometry-valid，0 physical resets。scene query不能证明孔/杆。
+- RC2：fixed three-finger fork，2 resets。baseline hard force；correction_1 Frame jump；没有 support/lift/preinsert/insert/release。
+
+阶段 8：assisted/oracle 和 scratch
+
+- `_scratch/mixed_max7_v41_regression`：7-target assisted visual pipeline，7/7行可用但physical_count=0；不能混入物理结果。
+- Rod dry-run v5/v6：只写 calibration rows，未完成 close；v6有一个 gate-ready contact candidate，但不构成物理抓取。
+- v66 seed bank unit：2 executable seeds、1 repair-allowed、0 final candidates、RL curriculum不允许。
+- near_grasp_device_trace：用于定位 device-index mismatch；v2只完成1-env/1-step并仍标 blocked。
+
+全部 debug_runs 顶层目录索引（74/74）
+--------------------------------------------------------------------------------
+
+说明：PASS 在这里可能只表示 smoke/harness PASS，不表示物理抓取。没有 summary 的目录明确标为 incomplete artifact。
+
+[基础、scratch、正式后期：29 个]
+
+01. _scratch
+    辅助/临时证据容器；含 assisted 7-target、near-grasp device trace、Rod dry run、v66 seed-bank unit。不是一个统一物理实验。
+02. closure_prior
+    262-frame timing prior + 40-probe morphology artifact；source recording无成功标签。
+03. contact_adaptive_morphology_calibration
+    第一版 calibration，40 probes，MORPHOLOGY_ADAPTER_BLOCKER_PROVEN，matrix rank 0。
+04. contact_adaptive_morphology_calibration_v2
+    action-scale修复后 calibration valid；分类名误导，没有 lift evidence。
+05. contact_adaptive_screw1_grasp
+    3 compatibility trials，table_barrier_abort，未进入有效 closure/lift。
+06. contact_adaptive_screw1_grasp_caging_fix
+    1 closure trial，364 synergy steps，零 target contact，non-target abort。
+07. contact_adaptive_screw1_object_relative_precontact
+    1 reset +16 probes；Jacobian可控但 restore gate失败，没有 controller motion/lift。
+08. external_baseline_audit
+    5个外部项目 commit/license/interface smoke；只提供审计/seed来源。
+09. frame_stage4_delivery_rc2
+    2 attempts；119.54 N baseline、19.18 mm corrected jump；delivery NONE。
+10. handoff_release
+    CEM artifacts、failure replay、docs/import graph/package；没有新搜索。
+11. multi_object_privileged_grasp_v3
+    五对象 runtime/M0；只有 Plug2进入12 physical resets且失败。
+12. physical_delivery_rc1
+    12 Frame cage candidates，0 geometry-valid，0 physical resets。
+13. plug2_gate_a_forensic_v2
+    16x5=80 Gate A resets；全部失败，tip residual 20-41 mm。
+14. privileged_physics_grasp_v1
+    Plug2 4x5=20 Gate A resets；全部失败。
+15. screw1_near_grasp_cem_5gen
+    非向量正式尝试，仅 heartbeat ENV_CREATED；没有完成 candidates。
+16. screw1_near_grasp_cem_5gen_vectorized
+    5 gens/1,280 candidates；2 unsafe contacts、0 lift。
+17. screw1_near_grasp_vector_smoke
+    只有 gpu_preflight；incomplete。
+18. screw1_near_grasp_vector_smoke_v2
+    只有 gpu_preflight；incomplete。
+19. screw1_near_grasp_vector_smoke_v3
+    Screw1 articulation-root configuration error。
+20. screw1_near_grasp_vector_smoke_v4
+    CPU/CUDA tensor device mismatch。
+21. screw1_near_grasp_vector_smoke_v5
+    reset-time mass backend set failure。
+22. screw1_near_grasp_vector_smoke_v6
+    128 env / 10 steps / [128,169] finite observations PASS。
+23. screw1_near_grasp_vector_smoke_vectorized_v7
+    [128,4] vs [4] quaternion broadcast mismatch。
+24. screw1_near_grasp_vector_smoke_vectorized_v8
+    128 env / 200 steps vectorization PASS。
+25. screw1_near_grasp_vector_smoke_vectorized_v9
+    128 env / 220 steps final vectorization PASS。
+26. scripted_baseline_screw1
+    one-finger 290.88 N impact、finger4 zero、close/lift未执行。
+27. v95_minimal_unified_workcell_repair
+    unified workcell/contact truth/action mapping audit；五对象训练锁定。
+28. wuji_floating_wrist_smoke_current_off
+    standalone wrist PD off，5/5 translation trials PASS；不含物体。
+29. wuji_floating_wrist_smoke_current_on
+    standalone wrist PD on，5/5 translation trials PASS；不含物体。
+
+[Screw1 v2 baseline/debug family：45 个]
+
+30. screw1_grasp_baseline_v2
+    KINEMATIC_GRASP_BLOCKER_PROVEN；grasp/close/lift false。
+31. screw1_grasp_baseline_v2_ab_off
+    no-hand settling中Screw1移动/接触，INITIAL_PHYSICS_BLOCKER_PROVEN。
+32. screw1_grasp_baseline_v2_ab_on
+    HEALTH_OK、no_hand_phase_only；不是抓取 trial。
+33. screw1_grasp_baseline_v2_action_audit
+    HEALTH_OK、action_audit_phase_only；验证26D authority。
+34. screw1_grasp_baseline_v2_contact_handoff
+    CONTACT_ACQUISITION_INCOMPLETE；没有 close/lift。
+35. screw1_grasp_baseline_v2_contact_handoff_1200
+    延长到1200的 contact handoff仍 incomplete。
+36. screw1_grasp_baseline_v2_dual_regulator
+    DUAL_CONTACT_REGULATION_BLOCKER_PROVEN；没有稳定双接触。
+37. screw1_grasp_baseline_v2_health
+    HOST_ACTION_REQUIRED；当时 inotify watch capacity exhausted。
+38. screw1_grasp_baseline_v2_midpoint_gate
+    只有 progress/heartbeat，无 v2_summary；incomplete artifact。
+39. screw1_grasp_baseline_v2_midpoint_gate_resume
+    KINEMATIC_GRASP_BLOCKER_PROVEN。
+40. screw1_grasp_baseline_v2_midpoint_gate_rpy0_bank3
+    只有 v2_progress，无 summary；incomplete artifact。
+41. screw1_grasp_baseline_v2_no_hand_fix
+    PHYSX_RUNTIME_BLOCKER_PROVEN；pre-AppLauncher errno28/inotify blocker。
+42. screw1_grasp_baseline_v2_nohand_off
+    no-hand settle时对象移动/接触，INITIAL_PHYSICS_BLOCKER_PROVEN。
+43. screw1_grasp_baseline_v2_nohand_on
+    HEALTH_OK、no_hand_phase_only；不是抓取 trial。
+44. screw1_grasp_baseline_v2_opposing_settle
+    CONTACT_ACQUISITION_INCOMPLETE。
+45. screw1_grasp_baseline_v2_probe_blocked_actions
+    KINEMATIC_GRASP_BLOCKER_PROVEN。
+46. screw1_grasp_baseline_v2_probe_handoff_fix
+    CONTACT_ACQUISITION_INCOMPLETE。
+47. screw1_grasp_baseline_v2_probe_settle_600
+    KINEMATIC_GRASP_BLOCKER_PROVEN。
+48. screw1_grasp_baseline_v2_probe_settle_v2
+    KINEMATIC_GRASP_BLOCKER_PROVEN。
+49. screw1_grasp_baseline_v2_seed_replay
+    只有 seed replay progress，无 summary；incomplete artifact。
+50. screw1_grasp_baseline_v2_seed_replay_allbody_smoke
+    HEALTH_OK、seed_replay_phase_only；检查 all-body sensing。
+51. screw1_grasp_baseline_v2_seed_replay_barrier
+    HEALTH_OK、seed_replay_phase_only；barrier smoke。
+52. screw1_grasp_baseline_v2_seed_replay_cap_smoke
+    HEALTH_OK、seed_replay_phase_only；cap/wrist audit smoke。
+53. screw1_grasp_baseline_v2_seed_replay_corrected
+    WRIST_CONTROL_BLOCKER_PROVEN；translation-only seed standoff。
+54. screw1_grasp_baseline_v2_seed_replay_corrected_gate
+    HEALTH_OK、seed_replay_phase_only；不是 grasp pass。
+55. screw1_grasp_baseline_v2_seed_replay_high_standoff_smoke
+    HEALTH_OK、seed_replay_phase_only；高 standoff没有解决接触。
+56. screw1_grasp_baseline_v2_seed_replay_lead
+    HEALTH_OK、seed_replay_phase_only。
+57. screw1_grasp_baseline_v2_seed_replay_lead065
+    HEALTH_OK、seed_replay_phase_only；lead 0.65变体。
+58. screw1_grasp_baseline_v2_seed_replay_prelude_smoke
+    HEALTH_OK、seed_replay_phase_only；prelude smoke。
+59. screw1_grasp_baseline_v2_seed_replay_rawcontact_smoke
+    HEALTH_OK、seed_replay_phase_only；增加raw contact/body mapping。
+60. screw1_grasp_baseline_v2_seed_replay_rotation_prelude_pd_on_smoke
+    HEALTH_OK、seed_replay_phase_only；rotation prelude + PD on。
+61. screw1_grasp_baseline_v2_seed_replay_rotation_prelude_smoke
+    只有 wrist audit files，无 v2_summary；incomplete artifact。
+62. screw1_grasp_baseline_v2_seed_replay_rotation_prelude_smoke2
+    HEALTH_OK、seed_replay_phase_only；修正后的rotation smoke。
+63. screw1_grasp_baseline_v2_seed_replay_short
+    HEALTH_OK、seed_replay_phase_only；短 replay。
+64. screw1_grasp_baseline_v2_seed_replay_summarycheck
+    HEALTH_OK、seed_replay_phase_only；summary plumbing check。
+65. screw1_grasp_baseline_v2_seed_replay_verified_corridor_smoke
+    HEALTH_OK、seed_replay_phase_only；verified corridor smoke。
+66. screw1_grasp_baseline_v2_seed_replay_xbank_smoke
+    只有 wrist/progress files，无 v2_summary；incomplete artifact。
+67. screw1_grasp_baseline_v2_seed_replay_xybank1_fast
+    顶层目录为空；没有可采信证据。
+68. screw1_grasp_baseline_v2_seed_replay_xybank3
+    KINEMATIC_GRASP_BLOCKER_PROVEN。
+69. screw1_grasp_baseline_v2_seed_replay_xybank3_smoke
+    只有 wrist/progress files，无 v2_summary；incomplete artifact。
+70. screw1_grasp_baseline_v2_wrist_audit
+    WRIST_CONTROL_BLOCKER_PROVEN；translation-only seed standoff。
+71. screw1_grasp_baseline_v2_wrist_translation_isolation
+    ARTICULATION_HIERARCHY_OR_DRIVE_FAILURE；PD on/off均未通过 isolation。
+72. screw1_grasp_baseline_v2_wrist_translation_isolation_off_retest
+    SEED_PATH_GEOMETRY_ISSUE；wrist tracking stall。
+73. screw1_grasp_baseline_v2_wrist_translation_isolation_pd_off
+    ARTICULATION_HIERARCHY_OR_DRIVE_FAILURE；direct joint tracking stall。
+74. screw1_grasp_baseline_v2_wrist_translation_isolation_pd_on
+    ARTICULATION_HIERARCHY_OR_DRIVE_FAILURE；direct joint tracking stall。
+
+重要的解释边界
+--------------------------------------------------------------------------------
+
+- 74 个目录不等于 74 个算法，也不等于 74 次完整物理抓取。很多是一次实现错误的 smoke、host health、summary plumbing或单轴控制验证。
+- `result_class` 是历史代码当时的输出，不一定是可靠物理语义；必须与 phase、force、trial、video和 honesty fields一起看。
+- “CONTACT_ACQUISITION_INCOMPLETE”说明当前执行器没拿到接触，不等于物体不可抓。
+- “KINEMATIC_GRASP_BLOCKER_PROVEN”是当时 runner/seed/path上的 blocker，不是全局机械不可行证明。
+- actor-pair没有证据时，不能确认某个具体非目标碰撞体。
+- current debug videos都是失败或 assisted/oracle evidence；没有一段可命名为 physical full-route success。
+
+最小阅读顺序
+--------------------------------------------------------------------------------
+
+1. 本文件：了解一个月的尝试和不要重复的路。
+2. readme/README.md：当前状态和入口。
+3. readme/CODE_MAP.md：代码调用链和字段语义。
+4. readme/experiment_ledger.json：九个主要实验系列的机器账本。
+5. debug_runs/plug2_gate_a_forensic_v2/report.md：为什么现有 Plug2 candidate不值得继续重复。
+6. debug_runs/multi_object_privileged_grasp_v3/final_summary.json：为什么大对象没有进入物理。
+7. debug_runs/frame_stage4_delivery_rc2/final_summary.json：Frame reset collision和视频错配。
+
+后续开发起点
+--------------------------------------------------------------------------------
+
+不要先改成功阈值或重跑旧搜索。先在 Rod/Backrest 的真实 runtime mesh和Isaac link support geometry上实现低力、可归因的双指 contact acquisition，使至少一个候选进入 bounded diagnostic physics并形成10-30帧稳定接触，然后复用现有 Gate/evaluator。若仍失败，应把失败限定在 runtime target transform、link support、non-target collision或contact instrumentation中的一个层级。

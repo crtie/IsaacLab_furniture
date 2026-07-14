@@ -10,3 +10,9 @@
 *.pt filter=lfs diff=lfs merge=lfs -text
 *.jit filter=lfs diff=lfs merge=lfs -text
 *.hdf5 filter=lfs diff=lfs merge=lfs -text
+
+# Preserve generated evidence and upstream robot descriptions byte-for-byte.
+artifacts/physical_delivery/**/*.csv -whitespace
+legacy/*.csv -whitespace
+source/isaaclab_assets/isaaclab_assets/robots/wuji-hand-description/**/*.xml -whitespace
+source/isaaclab_assets/isaaclab_assets/robots/wuji-hand-description/**/*.urdf -whitespace

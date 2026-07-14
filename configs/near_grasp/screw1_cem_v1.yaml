@@ -1,0 +1,80 @@
+schema_version: 1
+name: screw1_near_grasp_cem_v1
+classification: NEAR_GRASP_SEARCH_INCOMPLETE
+scene:
+  num_envs: 128
+  dt: 0.008333333333333333
+  episode_steps: 1200
+  env_spacing: 1.5
+  table_top_z_m: 0.7399999965887228
+object:
+  canonical_pos: [-0.18120920658111572, -0.002612590789794922, 0.7415136694908142]
+  canonical_quat_wxyz: [0.6045550107955933, 0.3139893710613251, 0.623823344707489, 0.3831036686897278]
+  xy_randomization_m: 0.015
+  z_clearance_range_m: [0.001, 0.002]
+  z_noise_m: 0.001
+  rpy_randomization_deg: 15.0
+  mass_range_kg: [0.008, 0.012]
+  friction_multiplier_range: [0.8, 1.2]
+program:
+  wrist_xyz_lower: [-0.015, -0.015, -0.008]
+  wrist_xyz_upper: [0.015, 0.015, 0.008]
+  wrist_rpy_limit_deg: 15.0
+  latent_limit: 2.5
+  approach_steps_range: [40, 140]
+  closure_speed_range: [0.25, 1.5]
+  first_contact_hold_steps_range: [8, 48]
+  lift_delay_steps_range: [8, 64]
+templates:
+  - {id: 0, name: screw1_frozen_y-0.027_retargeted_pinch, relative_xyz_m: [-0.035, -0.027, 0.008], quat_wxyz: [0.0028643785382516675, -0.9846748480757688, -0.016233453999339422, -0.17361945131177692], preshape: retargeted_pinch, active_fingers: [false, false, true, true, false]}
+  - {id: 1, name: screw1_frozen_y-0.027_retargeted_straddle, relative_xyz_m: [-0.035, -0.027, 0.008], quat_wxyz: [0.0028643785382516675, -0.9846748480757688, -0.016233453999339422, -0.17361945131177692], preshape: retargeted_straddle, active_fingers: [false, true, true, true, false]}
+  - {id: 2, name: screw1_frozen_y-0.012_retargeted_pinch, relative_xyz_m: [-0.035, -0.012, 0.008], quat_wxyz: [0.0028643785382516675, -0.9846748480757688, -0.016233453999339422, -0.17361945131177692], preshape: retargeted_pinch, active_fingers: [false, false, true, true, false]}
+  - {id: 3, name: screw1_frozen_y-0.012_retargeted_straddle, relative_xyz_m: [-0.035, -0.012, 0.008], quat_wxyz: [0.0028643785382516675, -0.9846748480757688, -0.016233453999339422, -0.17361945131177692], preshape: retargeted_straddle, active_fingers: [false, true, true, true, false]}
+  - {id: 4, name: screw1_frozen_y-0.042_retargeted_pinch, relative_xyz_m: [-0.035, -0.042, 0.008], quat_wxyz: [0.0028643785382516675, -0.9846748480757688, -0.016233453999339422, -0.17361945131177692], preshape: retargeted_pinch, active_fingers: [false, false, true, true, false]}
+  - {id: 5, name: screw1_frozen_y-0.042_retargeted_straddle, relative_xyz_m: [-0.035, -0.042, 0.008], quat_wxyz: [0.0028643785382516675, -0.9846748480757688, -0.016233453999339422, -0.17361945131177692], preshape: retargeted_straddle, active_fingers: [false, true, true, true, false]}
+executor:
+  coarse_acquisition_steps: 100
+  multi_contact_hold_steps: 30
+  controlled_close_steps: 60
+  post_close_hold_steps: 30
+  max_remaining_finger_steps: 180
+  max_lift_steps: 64
+  lift_increment_m: 0.00025
+force:
+  formal_contact_n: 0.05
+  soft_limit_n: 1.0
+  hard_abort_n: 5.0
+cem:
+  population: 256
+  physical_batch: 128
+  elite_count: 32
+  min_generations: 5
+  max_generations: 5
+  categorical_floor: 0.05
+  seed: 20260713
+prior:
+  requested: auto
+  resolved: retargeted_pca6
+  artifact: artifacts/physical_delivery/screw1_near_grasp_v0_1/retargeted_wuji_pca6.json
+  coordex_checkpoint: third_party/external_grasp_baselines/coordex/ckpts/hand_prior/kinematic_wrist_16k.pt
+  coordex_redistribution_allowed: false
+assets:
+  wuji_config: source/isaaclab_assets/isaaclab_assets/robots/wuji_hand.py
+  wuji_usd: source/isaaclab_assets/isaaclab_assets/robots/usd/wuji_right_floating_hand/wuji_right_floating_hand.usd
+  table_usd: source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/workdesk.usd
+  screw_usd: source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/chair/screw_ree3.usd
+artifacts:
+  candidate_results: artifacts/physical_delivery/screw1_near_grasp_v0_1/cem_candidate_results.jsonl
+  top_programs: artifacts/physical_delivery/screw1_near_grasp_v0_1/top_grasp_programs.json
+  generation_metrics: artifacts/physical_delivery/screw1_near_grasp_v0_1/cem_generation_metrics.csv
+  honesty_summary: artifacts/physical_delivery/screw1_near_grasp_v0_1/honesty_summary.json
+replay:
+  best_valid_candidate_id: 373
+  hard_abort_candidate_ids: [33, 707]
+  unresolved_candidate_id: 0
+  flyout_candidate_id: 837
+  camera_eye_local: [0.10, 0.32, 0.94]
+  camera_target_local: [-0.18, 0.0, 0.76]
+  width: 960
+  height: 540
+  fps: 60

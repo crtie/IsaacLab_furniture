@@ -40,6 +40,8 @@ docker/.container.cfg
 **/videos/*
 **/wandb/*
 **/.neptune/*
+/checkpoints/
+/records_teacher/
 docker/artifacts/
 *.tmp
 
@@ -73,6 +75,17 @@ tests/
 # Development logs and data
 my/
 **/logs/*.txt
+
+# Near-grasp generated evidence and external research clones
+/debug_runs/
+/state_banks/
+/third_party/external_grasp_baselines/
+/handoff/**/*.mp4
+/handoff/*.zip
+/[1-9]/
+/10/
+/*.zip
+/__MACOSX/
 
 # Backup files
 _backup*/

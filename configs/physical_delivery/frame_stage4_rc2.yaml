@@ -1,0 +1,63 @@
+schema_version: 2
+seed: 20260714
+
+runtime:
+  dt: 0.008333333333333333
+  min_gpu_free_gb: 12.0
+  max_rollout_steps: 1500
+  terminal_diagnostic_steps: 120
+  support_confirm_timeout_steps: 60
+  first_video_name: debug_first.mp4
+
+assets:
+  moving_frame_usd: source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/chair/frame_mirror.usd
+  fixed_asset_usd: source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/chair/frame_back_rod_rod.usd
+  wuji_urdf: source/isaaclab_assets/isaaclab_assets/robots/wuji-hand-description/urdf/right_block_palm_floating_drone.urdf
+  frame_geometry_audit: debug_runs/physical_delivery_rc1/frame_geometry_audit.json
+
+fork:
+  target_gap_m: 0.001
+  allowed_gap_min_m: 0.0005
+  allowed_gap_max_m: 0.0015
+  max_height_correction_m: 0.005
+  max_normal_correction_m: 0.005
+  baseline_partial_hook_fraction: 0.0
+  fallback_partial_hook_fraction: 0.25
+  partial_hook_steps: 20
+  maximum_directed_corrections: 2
+
+control:
+  settle_steps: 30
+  support_streak_steps: 10
+  contact_loss_grace_steps: 3
+  lift_distance_m: 0.035
+  lift_success_m: 0.025
+  lift_increment_m: 0.00025
+  support_free_steps: 20
+  relative_position_limit_m: 0.012
+  relative_rotation_limit_deg: 8.0
+  preinsert_offset_m: 0.030
+  preinsert_hold_steps: 20
+  insert_increment_m: 0.00015
+  inserted_hold_steps: 60
+  insert_contact_loss_grace_steps: 3
+  release_lower_m: 0.002
+  release_withdraw_m: 0.025
+  retreat_m: 0.010
+  wrist_translation_step_limit_m: 0.00025
+  wrist_rotation_step_limit_deg: 0.25
+  release_position_warning_m: 0.006
+  release_rotation_warning_deg: 6.0
+  release_position_limit_m: 0.003
+  release_rotation_limit_deg: 3.0
+  release_hold_steps: 60
+  hard_force_abort_n: 5.0
+  frame_jump_abort_m: 0.010
+  pose_position_tolerance_m: 0.008
+  pose_rotation_tolerance_deg: 8.0
+
+video:
+  width: 960
+  height: 540
+  fps: 60
+  capture_every_physics_steps: 2

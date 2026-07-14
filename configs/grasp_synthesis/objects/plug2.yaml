@@ -1,0 +1,35 @@
+schema_version: 3
+part_name: Plug2
+asset_usd: source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/chair/plug.usd
+visual_mesh: source/isaaclab_tasks/isaaclab_tasks/direct/np/asset/chair/plug.obj
+asset_scale: [0.75, 0.75, 0.75]
+geometry:
+  kind: cylinder_z
+  center_object: [0.003, 0.003, -0.010875]
+  radius_m: 0.003
+  half_length_m: 0.010875
+allowed_contact_regions:
+  - id: plug_body
+    center_object: [0.003, 0.003, -0.010875]
+    half_extents_m: [0.0031, 0.0031, 0.010975]
+    normal_axis_object: [0, 0, 1]
+    normal_abs_dot_max: 0.35
+    allowed_finger_groups: ["23", "34", "234"]
+    contact_modes: [antipodal_pair, three_point]
+    section_axis_object: [0, 0, 1]
+    section_tolerance_m: 0.0003
+    local_thickness_range_m: [0.004, 0.008]
+    approach_directions_object: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]]
+    sampling_weight: 1.0
+allowed_finger_groups: ["23", "34", "234"]
+approach_directions_object: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]]
+nominal_mass_kg: 0.01
+nominal_static_friction: 1.0
+nominal_dynamic_friction: 1.0
+target_normal_force_range_n: [0.08, 0.30]
+lift_direction_world: [0, 0, 1]
+candidate_fallback_order: [antipodal_pair, three_point, alternate_finger_group, alternate_approach]
+canonical_object_pos: [-0.1812092066, -0.0026125908, 0.76275]
+canonical_object_quat_wxyz: [1, 0, 0, 0]
+planning_geometry_only: true
+runtime_asset_audit_required: true
