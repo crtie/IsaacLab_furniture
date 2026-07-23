@@ -3,223 +3,85 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-import gymnasium as gym
+"""Lazy NP environment registration boundary used by chair stage configs."""
 
-from . import agents
-from .chair1_env import FrankaChair1Env
-from .chair2_env import FrankaChair2Env
-from .chair3_env import FrankaChair3Env
-from .chair4_env import FrankaChair4Env
-from .chair5_env import FrankaChair5Env
-from .chair6_env import FrankaChair6Env
-from .vasskar1_env import FrankaVasskar1Env
-from .vasskar2_env import FrankaVasskar2Env
-from .plane1_env import FrankaPlane1Env
-from .plane2_env import FrankaPlane2Env
-from .plane3_env import FrankaPlane3Env
-from .plane4_env import FrankaPlane4Env
-from .lego1_env import FrankaLego1Env
-from .lego2_env import FrankaLego2Env
-from .lego3_env import FrankaLego3Env
-from .lego4_env import FrankaLego4Env
-from .lego5_env import FrankaLego5Env
-from .lego6_env import FrankaLego6Env
-from .lego7_env import FrankaLego7Env
-from .np_env_cfg import FrankaChair1Cfg, FrankaChair2Cfg, FrankaChair3Cfg, FrankaChair4Cfg, FrankaChair5Cfg, FrankaChair6Cfg
-from .np_env_cfg import FrankaVasskar1Cfg, FrankaVasskar2Cfg
-from .np_env_cfg import FrankaPlane1Cfg, FrankaPlane2Cfg, FrankaPlane3Cfg, FrankaPlane4Cfg
-from .np_env_cfg import FrankaLego1Cfg, FrankaLego2Cfg, FrankaLego3Cfg, FrankaLego4Cfg, FrankaLego5Cfg, FrankaLego6Cfg, FrankaLego7Cfg
+import importlib
 
-##
-# Register Gym environments.
-##
+from .standard_registration import STANDARD_ENV_SPECS, register_standard_environments
 
-gym.register(
-    id="Isaac-Franka-Chair1-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaChair1Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaChair1Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
+
+register_standard_environments()
+
+_COMPAT_EXPORTS = {
+    "FrankaChair1Env": (".chair1_env", "FrankaChair1Env"),
+    "FrankaChair2Env": (".franka_chair2_env", "FrankaChair2Env"),
+    "FrankaChairTeacherEnv": (".franka_teacher_compat_env", "FrankaChairTeacherEnv"),
+    "FrankaChair3Env": (".chair3_env", "FrankaChair3Env"),
+    "FrankaChair4Env": (".chair4_env", "FrankaChair4Env"),
+    "FrankaChair5Env": (".chair5_env", "FrankaChair5Env"),
+    "FrankaChair6Env": (".chair6_env", "FrankaChair6Env"),
+    "FrankaVasskar1Env": (".vasskar1_env", "FrankaVasskar1Env"),
+    "FrankaVasskar2Env": (".vasskar2_env", "FrankaVasskar2Env"),
+    "FrankaPlane1Env": (".plane1_env", "FrankaPlane1Env"),
+    "FrankaPlane2Env": (".plane2_env", "FrankaPlane2Env"),
+    "FrankaPlane3Env": (".plane3_env", "FrankaPlane3Env"),
+    "FrankaPlane4Env": (".plane4_env", "FrankaPlane4Env"),
+    "FrankaLego1Env": (".lego1_env", "FrankaLego1Env"),
+    "FrankaLego2Env": (".lego2_env", "FrankaLego2Env"),
+    "FrankaLego3Env": (".lego3_env", "FrankaLego3Env"),
+    "FrankaLego4Env": (".lego4_env", "FrankaLego4Env"),
+    "FrankaLego5Env": (".lego5_env", "FrankaLego5Env"),
+    "FrankaLego6Env": (".lego6_env", "FrankaLego6Env"),
+    "FrankaLego7Env": (".lego7_env", "FrankaLego7Env"),
+}
+_COMPAT_EXPORTS.update(
+    {
+        "SHARPAWAVE_ENV_SPECS": (".sharpawave_registration", "SHARPAWAVE_ENV_SPECS"),
+        "register_sharpawave_environments": (
+            ".sharpawave_registration",
+            "register_sharpawave_environments",
+        ),
+    }
+)
+_COMPAT_EXPORTS.update(
+    {
+        name: (".np_env_cfg", name)
+        for name in (
+            "FrankaChair1Cfg",
+            "FrankaChair2Cfg",
+            "FrankaChairTeacherCfg",
+            "FrankaChair3Cfg",
+            "FrankaChair4Cfg",
+            "FrankaChair5Cfg",
+            "FrankaChair6Cfg",
+            "FrankaVasskar1Cfg",
+            "FrankaVasskar2Cfg",
+            "FrankaPlane1Cfg",
+            "FrankaPlane2Cfg",
+            "FrankaPlane3Cfg",
+            "FrankaPlane4Cfg",
+            "FrankaLego1Cfg",
+            "FrankaLego2Cfg",
+            "FrankaLego3Cfg",
+            "FrankaLego4Cfg",
+            "FrankaLego5Cfg",
+            "FrankaLego6Cfg",
+            "FrankaLego7Cfg",
+        )
+    }
 )
 
-gym.register(
-    id="Isaac-Franka-Chair2-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaChair2Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaChair2Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
 
-gym.register(
-    id="Isaac-Franka-Chair3-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaChair3Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaChair3Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
+def __getattr__(name: str):
+    """Preserve historical direct.np class imports without eager loading."""
 
-gym.register(
-    id="Isaac-Franka-Chair4-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaChair4Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaChair4Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
+    target = _COMPAT_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(name)
+    module_name, attribute = target
+    value = getattr(importlib.import_module(module_name, __name__), attribute)
+    globals()[name] = value
+    return value
 
-gym.register(
-    id="Isaac-Franka-Chair5-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaChair5Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaChair5Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
 
-gym.register(
-    id="Isaac-Franka-Chair6-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaChair6Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaChair6Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Vasskar1-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaVasskar1Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaVasskar1Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Vasskar2-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaVasskar2Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaVasskar2Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Plane1-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaPlane1Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaPlane1Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Plane2-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaPlane2Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaPlane2Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Plane3-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaPlane3Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaPlane3Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Plane4-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaPlane4Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaPlane4Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Lego1-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaLego1Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaLego1Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Lego2-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaLego2Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaLego2Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Lego3-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaLego3Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaLego3Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Lego4-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaLego4Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaLego4Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Lego5-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaLego5Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaLego5Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Lego6-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaLego6Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaLego6Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Isaac-Franka-Lego7-Direct-v0",
-    entry_point="isaaclab_tasks.direct.np:FrankaLego7Env",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": FrankaLego7Cfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-    },
-)
+__all__ = ["STANDARD_ENV_SPECS", "register_standard_environments", *_COMPAT_EXPORTS]

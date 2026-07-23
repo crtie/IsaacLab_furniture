@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "robot": "sharpawave",
+  "variant": "floating",
+  "action_schema": "sharpawave.robot_schema.v1.floating",
+  "action_profile": "joint_delta",
+  "action_scale": [
+    0.01, 0.01, 0.01, 0.05, 0.05, 0.05,
+    0.041888, 0.013964, 0.038398, 0.013964, 0.034906,
+    0.03490666, 0.013964, 0.034906, 0.027926,
+    0.03490666, 0.013964, 0.034906, 0.027926,
+    0.03490666, 0.013964, 0.034906, 0.027926,
+    0.01, 0.03490666, 0.013964, 0.034906, 0.027926
+  ],
+  "scale_derivation": "xyz=0.01m; continuous wrist=0.05rad; bounded finger joints=2% of URDF range clipped to [0.01,0.08]rad",
+  "drive_source": "right_sharpa_wave_urdf/usd/config.yaml",
+  "drive_type": "force_position_target",
+  "translation_stiffness": 3000.0,
+  "translation_damping": 100.0,
+  "rotation_stiffness": 20.0,
+  "rotation_damping": 0.5,
+  "finger_stiffness": 20.0,
+  "finger_damping": 0.5,
+  "home_pose_source": "URDF/USD default joint positions",
+  "physical_grasp_profile": null,
+  "physical_insert_profile": null
+}

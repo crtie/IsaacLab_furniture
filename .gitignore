@@ -16,6 +16,7 @@
 
 # Python
 .DS_Store
+**/._*
 **/*.egg-info/
 **/__pycache__/
 **/.pytest_cache/
@@ -78,15 +79,30 @@ my/
 
 # Near-grasp generated evidence and external research clones
 /debug_runs/
+/archive/
+/artifacts/
+/deliverables/
 /state_banks/
 /third_party/external_grasp_baselines/
 /handoff/**/*.mp4
 /handoff/*.zip
+/source/isaaclab_assets/isaaclab_assets/robots/sharpa-wave-description/
 /[1-9]/
 /10/
 /*.zip
+/*.tar.gz
 /__MACOSX/
+
+# Presentation and media deliverables are not source code
+**/*.mp4
+**/*.mov
+**/*.ppt
+**/*.pptx
 
 # Backup files
 _backup*/
 *.backup
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/

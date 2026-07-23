@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "policies": {
+    "pick": {
+      "skill": "pick",
+      "entrypoint": "your_package.policies:PickPolicy",
+      "checkpoint": "checkpoints/sharpawave_pick.pt",
+      "action_schema": "sharpawave.robot_schema.v1.floating",
+      "observation_schema": "chair.skill_observation.v1",
+      "normalization": {"type": "checkpoint_metadata"},
+      "control_frequency_hz": 20.0,
+      "metadata": {}
+    },
+    "insert": {
+      "skill": "insert",
+      "entrypoint": "your_package.policies:InsertPolicy",
+      "checkpoint": "checkpoints/sharpawave_insert.pt",
+      "action_schema": "sharpawave.robot_schema.v1.floating",
+      "observation_schema": "chair.skill_observation.v1",
+      "normalization": {"type": "checkpoint_metadata"},
+      "control_frequency_hz": 20.0,
+      "metadata": {}
+    }
+  }
+}

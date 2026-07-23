@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "robot": "sharpawave",
+  "install_relative_to_isaaclab_assets_robots": "sharpa-wave-description",
+  "file_count": 93,
+  "total_size_bytes": 236266018,
+  "tree_sha256": "15f38ac15d306336ad92bd5956368067c1cb50a2ca574e27b4db019346ae4517",
+  "required_files": [
+    "right_sharpa_wave_urdf/right_sharpa_wave_floating.urdf",
+    "right_sharpa_wave_urdf/right_sharpa_wave_floating_peg_fixedrot.urdf",
+    "right_sharpa_wave_urdf/usd/config.yaml",
+    "right_sharpa_wave_urdf/usd/right_sharpa_wave_floating_runtime_contact_deinstanced.usd",
+    "right_sharpa_wave_urdf/usd/right_sharpa_wave_floating_3t_fixedrot.usd"
+  ]
+}

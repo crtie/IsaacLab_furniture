@@ -253,7 +253,7 @@ class ChairAssembly1(FactoryTask):
             ),
             scale = np.array([1.0, 1.0, 1.0]), 
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                enabled_self_collisions=True,
+                enabled_self_collisions=False,
                 fix_root_link=True,  # add this so the fixed asset is set to have a fixed base
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass=fixed_asset_cfg.mass),
@@ -261,7 +261,7 @@ class ChairAssembly1(FactoryTask):
         ),
 
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.0, -0.25, 0.74), rot=(0.707, 0.707, 0.0, 0.0), joint_pos={}, joint_vel={}
+            pos=(-0.16, -0.3, 0.74), rot=(0.707, 0.707, 0.0, 0.0), joint_pos={}, joint_vel={}
         ),
         actuators={},
     )
@@ -420,6 +420,15 @@ class ChairAssembly1(FactoryTask):
 
 
 @configclass
+class ChairOracleAssemblyScene(ChairAssembly1):
+    """Minimal visible scene for full oracle/sticky assembly replay."""
+
+    fixed_asset_cfg = ChairFrame()
+    oracle_pipeline_scene_kind = "oracle_minimal_stage1_base_scene"
+    oracle_pipeline_initial_task_stage = 1
+
+
+@configclass
 class ChairAssembly2(FactoryTask):
     #! crtie: task_idx is used to identify the task in the environment.
     #! crtie: task 1 is "insert the first plug into the first hole",
@@ -527,7 +536,7 @@ class ChairAssembly2(FactoryTask):
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=5e-4, rest_offset=0.0),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -553,7 +562,7 @@ class ChairAssembly2(FactoryTask):
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 articulation_enabled=False,  # Set to False for RigidObject
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=1e-4, rest_offset=5e-3),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=5e-4, rest_offset=0.0),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0-0.55, 0.4, 0.1+0.75), rot=(1.0, 0.0, 0.0, 0.0)),
     )
